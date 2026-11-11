@@ -1,0 +1,27 @@
+# Godot specific
+.godot/
+*.import
+*.translation
+*.md5
+*.ctex
+
+# Build outputs
+.build/
+.export/
+templates/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary recovery artifacts
+recovered_design.md
