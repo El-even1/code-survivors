@@ -11,6 +11,11 @@ var char_name := ""
 var char_weapon := ""
 var char_passive := ""
 
+## ---------- Stage 2 Level System ----------
+var level_sim: LevelSim
+var current_sector: String = ""
+var current_boss: String = ""
+
 ## Boss state
 var boss_id := ""
 var boss_hp := 0.0
@@ -56,6 +61,7 @@ var active_slot := 0
 var slot_switch_cooldown := 0.0
 var last_hit_time := -999.0
 var persist_store: Dictionary = {}
+var owned: Dictionary = {}   # 已获得升级：id -> level
 
 ## ---------- Entities ----------
 var enemy_pos: Array[Vector2] = []
@@ -88,8 +94,12 @@ var _rng := RandomNumberGenerator.new()
 
 func _init(seed_value: int = 20261111) -> void:
 	_rng.seed = seed_value
+	# Initialize 3 empty pipeline slots
 	for i in range(3):
 		slots.append([])
+	# Initialize LevelSim
+	level_sim = LevelSim.new()
+	level_sim.init(self)
 
 
 func _select_char(cid: String) -> void:
@@ -138,6 +148,7 @@ func _select_char(cid: String) -> void:
 
 	_recalc_attack_stats()
 	_reset_slots_for_char(cid)
+	level_sim.start_sector("sector_a")
 
 
 func start_boss(boss_id: String) -> void:
@@ -176,8 +187,8 @@ func _apply_all_modifiers() -> void:
 	_recalc_attack_stats()
 	for slot_idx in range(slots.size()):
 		var block_arr: Array = slots[slot_idx]
-		for block_val in block_arr:
-			var block: CommandBlock = block_val
+		for block_item in block_arr:
+			var block: CommandBlock = block_item
 			if block.kind == CommandBlock.KIND_MODIFIER:
 				var id := block.id
 				match id:
@@ -195,6 +206,32 @@ func _apply_all_modifiers() -> void:
 						attack_track = true
 					_:
 						pass
+
+
+func apply_upgrade(id: String) -> void:
+	var info: Dictionary = ProtoLogic.Tuning_UPGRADES.get(id, {})
+	if info.is_empty():
+		return
+	owned[id] = int(owned.get(id, 0)) + 1
+	# 数值型升级直接折进 base 值，再由 _apply_all_modifiers() 重算，
+	# 这样管线修饰符与角色基础值的叠加关系不会被升级破坏。
+	match String(info.get("kind", "")):
+		"damage":
+			base_attack_damage *= 1.25
+		"radius":
+			base_attack_radius *= 1.18
+		"cooldown":
+			base_attack_cooldown = maxf(0.05, base_attack_cooldown * 0.86)
+		"move":
+			player_speed *= 1.12
+		"magnet":
+			magnet_radius *= 1.30
+		"vitality":
+			player_max_hp *= 1.20
+			player_hp = player_max_hp
+		_:
+			pass
+	_apply_all_modifiers()
 
 
 func add_command(slot_idx: int, block: CommandBlock) -> bool:
@@ -273,6 +310,12 @@ func step(delta: float, input_dir: Vector2) -> void:
 		return
 	elapsed += delta
 
+	# Level simulation
+	level_sim.step(delta)
+	# If game ended, stop
+	if level_sim.is_victory:
+		return
+
 	if input_dir.length_squared() > 0.0001:
 		player_pos += input_dir.normalized() * player_speed * delta
 		_clamp_player()
@@ -304,12 +347,29 @@ func step(delta: float, input_dir: Vector2) -> void:
 func _execute_pipeline(delta: float) -> Array:
 	if active_slot < 0 or active_slot >= slots.size():
 		return []
-	var pipeline: Array = slots[active_slot]
-	var events: Array = []
-	for block in pipeline:
-		if block.kind == CommandBlock.KIND_MODIFIER:
-			pass  # modifiers applied in _apply_all_modifiers()
-	return events
+	# 修饰符是「静态属性」：统一由 _apply_all_modifiers() 从 base 值重算。
+	# 这里若也乘一次，冷却/范围会逐帧塌陷到下限（曾导致攻速测试失败）。
+	# 保留此入口给后续 trigger / condition / action 使用。
+	return []
+
+
+func _apply_modifier(block: CommandBlock) -> Dictionary:
+	var id := block.id
+	match id:
+		"mod_penetrate":
+			return {"type": "attr", "attr": "pierce", "value": float(block.get_param("extra_pierce", 2))}
+		"mod_multi":
+			return {"type": "attr", "attr": "multi", "value": float(block.get_param("extra_count", 1))}
+		"mod_range":
+			return {"type": "attr", "attr": "radius", "value": float(block.get_param("range_mult", 1.30))}
+		"mod_cooldown":
+			return {"type": "attr", "attr": "cooldown", "value": float(block.get_param("cd_mult", 0.86))}
+		"mod_dot":
+			return {"type": "attr", "attr": "dot_damage", "value": block.get_param("dot_damage", 5.0)}
+		"mod_track":
+			return {"type": "attr", "attr": "track", "value": 1.0}
+		_:
+			return {}
 
 
 func _apply_pipeline_events(events: Array) -> void:
@@ -356,6 +416,15 @@ func _clamp_player() -> void:
 
 
 func _fire_attack() -> void:
+	# If boss fight, attack boss instead of enemies
+	if current_boss != "":
+		boss_hp -= attack_damage
+		damage_dealt += attack_damage
+		_push_dmg_text(player_pos, attack_damage)
+		if boss_hp <= 0:
+			_boss_defeated()
+		return
+
 	if enemy_pos.size() == 0:
 		return
 	var nearest_idx := -1
@@ -398,6 +467,11 @@ func _kill_enemy(idx: int) -> void:
 	ProtoLogic.swap_pop(enemy_pos, idx)
 	ProtoLogic.swap_pop(enemy_hp, idx)
 	ProtoLogic.swap_pop(enemy_id, idx)
+
+
+func _boss_defeated() -> void:
+	boss_hp = 0
+	level_sim.next_sector()
 
 
 func _update_gems(delta: float) -> void:

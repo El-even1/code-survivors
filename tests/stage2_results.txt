@@ -1,0 +1,17 @@
+  ok   Sector A name correct
+  ok   Sector A spawn batch 4
+  ok   Sector A fast spawn
+  ok   Boss 1 name correct
+  ok   Boss has max HP
+  ok   Boss has multiple phases
+  ok   Sector A started
+  ok   Safe zone after sector A
+  ok   Boss 1 started
+  ok   Boss 2 after Boss 1
+  ok   Victory after all bosses
+  ok   Boss 1 started
+  ok   Boss has HP
+  ok   Boss takes damage
+  ok   Boss phase 2 active
+
+ALL 15 CHECKS PASSED

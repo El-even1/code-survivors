@@ -73,7 +73,8 @@ func test_boss_data_loads() -> void:
 # =========================================================
 func test_level_flow() -> void:
 	var sim := ProtoSim.new()
-	var ls := LevelSim.new(sim)
+	var ls := LevelSim.new()
+	ls.init(sim)
 	ls.start_sector("sector_a")
 	check(ls.current_sector == "sector_a", "Sector A started")
 	ls.next_sector()

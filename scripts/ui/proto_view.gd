@@ -292,12 +292,12 @@ func _draw() -> void:
 	# White circle AoE (pulse diffusion)
 	if pulse_t >= 0.0:
 		var k := pulse_t / PULSE_LIFE
-		var r: float = sim.aoe_radius * (0.72 + 0.28 * k)
+		var r: float = sim.attack_radius * (0.72 + 0.28 * k)
 		draw_circle(sim.player_pos, r, Color(1, 1, 1, 0.16 * (1.0 - k)))
 		draw_arc(sim.player_pos, r, 0.0, TAU, 48, Color(1, 1, 1, 0.85 * (1.0 - k)), 2.5)
 	else:
 		# Silent state: faint white circle shows attack range
-		draw_arc(sim.player_pos, sim.aoe_radius, 0.0, TAU, 40, Color(1, 1, 1, 0.10), 1.5)
+		draw_arc(sim.player_pos, sim.attack_radius, 0.0, TAU, 40, Color(1, 1, 1, 0.10), 1.5)
 
 	# Green gems
 	var half_gem := Tuning.GEM_SIZE * 0.5

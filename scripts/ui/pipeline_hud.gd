@@ -43,7 +43,7 @@ func _rebuild() -> void:
 		_clear_all()
 		return
 
-	var blocks: Array = pipeline.blocks
+	var blocks: Array = pipeline
 	var n: int = blocks.size()
 
 	## Ensure enough node labels
@@ -58,14 +58,15 @@ func _rebuild() -> void:
 		var lbl = _node_labels.pop_back()
 		lbl.queue_free()
 
-	## Ensure enough arrow labels
-	while _arrow_labels.size() < n - 1:
+	## Ensure enough arrow labels（n==0 时目标数是 0，不能是 -1，否则 pop_back 出来是 null）
+	var arrow_target: int = maxi(0, n - 1)
+	while _arrow_labels.size() < arrow_target:
 		var lbl := Label.new()
 		lbl.add_theme_font_size_override("font_size", 14)
 		add_child(lbl)
 		_arrow_labels.append(lbl)
 
-	while _arrow_labels.size() > n - 1:
+	while _arrow_labels.size() > arrow_target:
 		var lbl = _arrow_labels.pop_back()
 		lbl.queue_free()
 
@@ -82,7 +83,8 @@ func _rebuild() -> void:
 		lbl.text = "%s\n%s" % [_short_name(block.id), _kind_label(block.kind)]
 
 		var base := _kind_color(block.kind)
-		var f: float = pipeline.flash_strength(i)
+		# 精简版没有 Pipeline 对象，用「最近是否命中」作为高亮信号
+		var f: float = 1.0 if sim.get_last_hit() else 0.0
 
 		## Background color (flash makes it brighter)
 		var bg := base.darkened(0.75)
@@ -125,11 +127,8 @@ func _clear_all() -> void:
 
 
 func _kind_color(kind: String) -> Color:
-	if kind == CommandBlock.KIND_TRIGGER:
-		return COL_TRIGGER
-	elif kind == CommandBlock.KIND_CONDITION:
-		return COL_COND
-	elif kind == CommandBlock.KIND_ACTION:
+	# 精简版 CommandBlock 只有 action / modifier 两类
+	if kind == CommandBlock.KIND_ACTION:
 		return COL_ACTION
 	elif kind == CommandBlock.KIND_MODIFIER:
 		return COL_MOD
@@ -137,11 +136,7 @@ func _kind_color(kind: String) -> Color:
 
 
 func _kind_label(kind: String) -> String:
-	if kind == CommandBlock.KIND_TRIGGER:
-		return "Trigger"
-	elif kind == CommandBlock.KIND_CONDITION:
-		return "Condition"
-	elif kind == CommandBlock.KIND_ACTION:
+	if kind == CommandBlock.KIND_ACTION:
 		return "Action"
 	elif kind == CommandBlock.KIND_MODIFIER:
 		return "Modifier"

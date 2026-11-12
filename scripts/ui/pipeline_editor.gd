@@ -10,10 +10,13 @@ var editor_shown := false
 
 var panel: ColorRect
 var title: Label
+var slot_row: HBoxContainer
 var slot_buttons: Array = []
+var list_title: Label
 var block_list: VBoxContainer
 var add_btn: Button
 var close_btn: Button
+var hint: Label
 var template_scroll: ScrollContainer
 var template_grid: GridContainer
 
@@ -51,6 +54,7 @@ func _build_panel() -> void:
 
 	## Slot switch buttons
 	var slot_row := HBoxContainer.new()
+	self.slot_row = slot_row
 	slot_row.position = Vector2(40, 90)
 	slot_row.size = Vector2(400, 40)
 	add_child(slot_row)
@@ -65,6 +69,7 @@ func _build_panel() -> void:
 
 	## Command block list title
 	var list_title := Label.new()
+	self.list_title = list_title
 	list_title.position = Vector2(40, 150)
 	list_title.text = "Current pipeline command blocks"
 	list_title.add_theme_font_size_override("font_size", FS_LABEL)
@@ -96,6 +101,7 @@ func _build_panel() -> void:
 
 	## Slot hint
 	var hint := Label.new()
+	self.hint = hint
 	hint.position = Vector2(40, Tuning.VIEW_H - 40)
 	hint.text = "Tip: combat can only switch slots; edit pipeline in pause/safe zone"
 	hint.add_theme_font_size_override("font_size", 14)
@@ -140,12 +146,28 @@ func _build_template_popup() -> void:
 func show_editor(slot: int) -> void:
 	editing_slot = clampf(slot, 0, 2)
 	editor_shown = true
+	panel.visible = true
+	title.visible = true
+	slot_row.visible = true
+	list_title.visible = true
+	block_list.visible = true
+	add_btn.visible = true
+	close_btn.visible = true
+	hint.visible = true
 	refresh_ui()
 
 
 func hide_editor() -> void:
 	editor_shown = false
 	_close_template_popup()
+	panel.visible = false
+	title.visible = false
+	slot_row.visible = false
+	list_title.visible = false
+	block_list.visible = false
+	add_btn.visible = false
+	close_btn.visible = false
+	hint.visible = false
 
 
 func refresh_ui() -> void:
@@ -162,12 +184,12 @@ func refresh_ui() -> void:
 	for child in block_list.get_children():
 		child.queue_free()
 
-	var pipeline := sim.get_pipeline(editing_slot)
+	var pipeline: Array = sim.get_pipeline(editing_slot)
 	if pipeline == null:
 		return
 
-	for i in range(pipeline.blocks.size()):
-		var block := pipeline.blocks[i]
+	for i in range(pipeline.size()):
+		var block: CommandBlock = pipeline[i]
 		var row := HBoxContainer.new()
 		row.size = Vector2(500, 44)
 		row.add_theme_constant_override("separation", 8)
