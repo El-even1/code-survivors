@@ -1,8 +1,8 @@
 extends Control
 
-## 阶段①色块原型 · 迷你管线条（战斗中的实时可视化）
-## 画在 CanvasLayer 下，固定在屏幕右下角，不随相机移动
-## 让玩家一边打一边看见"我的管线在跑"
+## Stage I Color Prototype · Mini Pipeline HUD (real-time visualization in combat)
+## Drawn on CanvasLayer, fixed at bottom-right, does not follow camera
+## Let player "see my pipeline running" while fighting: nodes flash when executed
 
 var sim: ProtoSim
 
@@ -11,15 +11,15 @@ const NODE_H := 32.0
 const GAP := 18.0
 const PAD := 14.0
 
-# 各类块的颜色
+## Colors per block kind
 const COL_TRIGGER := Color(0.55, 0.85, 1.0)
 const COL_COND := Color(0.75, 0.75, 0.85)
 const COL_ACTION := Color(1.0, 0.62, 0.35)
 const COL_MOD := Color(0.72, 0.55, 1.0)
 const COL_FLASH := Color(1, 1, 1)
 
-var _node_labels: Array = []      # 每个节点的 Label
-var _arrow_labels: Array = []     # 节点间箭头的 Label
+var _node_labels: Array = []      # per-node label
+var _arrow_labels: Array = []     # per-node arrow label
 
 func init(sim_ref: ProtoSim) -> void:
 	sim = sim_ref
@@ -46,7 +46,7 @@ func _rebuild() -> void:
 	var blocks: Array = pipeline.blocks
 	var n: int = blocks.size()
 
-	# 确保足够的节点标签
+	## Ensure enough node labels
 	while _node_labels.size() < n:
 		var lbl := Label.new()
 		lbl.custom_minimum_size = Vector2(NODE_W, NODE_H)
@@ -58,7 +58,7 @@ func _rebuild() -> void:
 		var lbl = _node_labels.pop_back()
 		lbl.queue_free()
 
-	# 确保足够的箭头标签
+	## Ensure enough arrow labels
 	while _arrow_labels.size() < n - 1:
 		var lbl := Label.new()
 		lbl.add_theme_font_size_override("font_size", 14)
@@ -69,7 +69,7 @@ func _rebuild() -> void:
 		var lbl = _arrow_labels.pop_back()
 		lbl.queue_free()
 
-	# 布局：右下角锚定
+	## Layout: bottom-right anchored
 	var total_w := n * NODE_W + (n - 1) * GAP
 	var x0 := size.x - total_w - PAD
 	var y0 := size.y - NODE_H - PAD
@@ -84,13 +84,13 @@ func _rebuild() -> void:
 		var base := _kind_color(block.kind)
 		var f: float = pipeline.flash_strength(i)
 
-		# 背景颜色（闪光时变亮）
+		## Background color (flash makes it brighter)
 		var bg := base.darkened(0.75)
 		if f > 0.0:
 			bg = bg.lerp(COL_FLASH, f)
 		lbl.add_theme_color_override("font_color", Color(0.95, 0.98, 1.0))
 
-		# 使用自定义色块：Label 不支持背景渐变，用 add_theme_stylebox_override
+		## Custom style box: Label has no gradient bg, use add_theme_stylebox_override
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = bg
 		sb.border_width_top = 2
@@ -104,7 +104,7 @@ func _rebuild() -> void:
 		sb.corner_radius_bottom_right = 4.0
 		lbl.add_theme_stylebox_override("normal", sb)
 
-	# 箭头
+	## Arrows
 	for i in range(n - 1):
 		var lbl: Label = _arrow_labels[i]
 		lbl.position = Vector2(x0 + i * (NODE_W + GAP) + NODE_W + 4, y0 + NODE_H * 0.5 - 8)
@@ -138,17 +138,17 @@ func _kind_color(kind: String) -> Color:
 
 func _kind_label(kind: String) -> String:
 	if kind == CommandBlock.KIND_TRIGGER:
-		return "触发"
+		return "Trigger"
 	elif kind == CommandBlock.KIND_CONDITION:
-		return "条件"
+		return "Condition"
 	elif kind == CommandBlock.KIND_ACTION:
-		return "动作"
+		return "Action"
 	elif kind == CommandBlock.KIND_MODIFIER:
-		return "修饰"
+		return "Modifier"
 	return "?"
 
 
-## "action_aoe" → "白圈AoE"，直接查模板描述
+## "action_aoe" → "White Circle AoE", look up template desc
 func _short_name(block_id: String) -> String:
 	var tpl = CommandBlock.BLOCK_TEMPLATES.get(block_id)
 	if tpl != null:
