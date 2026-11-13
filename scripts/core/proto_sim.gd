@@ -129,9 +129,10 @@ func _select_char(cid: String) -> void:
 		base_attack_multi = 1
 		attack_track = true
 	elif cid == "warrior":
-		base_attack_damage = 35.0
-		base_attack_radius = 55.0
-		base_attack_pierce = 1
+		# 近战横扫：刀光覆盖一圈，范围内敌人全部命中（范围攻击）
+		base_attack_damage = 30.0
+		base_attack_radius = 95.0
+		base_attack_pierce = 99
 		base_attack_multi = 1
 		attack_track = false
 	elif cid == "hunter":

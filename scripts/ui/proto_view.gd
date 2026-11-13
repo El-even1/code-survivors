@@ -402,11 +402,13 @@ func _draw_weapon_attack(flash: float) -> void:
 		draw_circle(beam_end, 6.0 * pct, beam_col, true)
 
 	elif sim.char_id == "warrior":
-		# Blade: red swing arc around player, facing enemy
-		var ang: float = face.angle()
-		var span: float = 1.4  # radians
+		# Blade: 360° 横扫（逻辑就是整圈命中）——淡红整圈 + 扫过的一道光弧
 		var arc_col := Color(1, 0.35, 0.35, alpha)
-		draw_arc(p, r * 0.85, ang - span * 0.5, ang + span * 0.5, 32, arc_col, width)
+		draw_circle(p, r, Color(1, 0.35, 0.35, 0.12 * pct), true)
+		draw_arc(p, r, 0.0, TAU, 48, Color(1, 0.4, 0.4, 0.55 * pct), width)
+		# 扫击光弧随闪现推进，读成「转了一圈」
+		var sweep_end: float = -PI * 0.5 + TAU * (1.0 - pct)
+		draw_arc(p, r - 2.0, sweep_end - 1.1, sweep_end, 24, arc_col, width + 2.0)
 		draw_circle(p, 4.0 * pct, arc_col, true)
 
 	elif sim.char_id == "hunter":

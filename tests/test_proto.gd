@@ -34,6 +34,7 @@ func _init() -> void:
 	test_select_char_changes_stats()
 	test_auto_attack_hits_nearest()
 	test_attack_only_when_in_range()
+	test_warrior_cleave_hits_area()
 	test_modifier_changes_attack()
 	test_pipeline_empty()
 	test_pipeline_modifier_chain()
@@ -277,6 +278,55 @@ func test_attack_only_when_in_range() -> void:
 	check(sim.aoe_pulses > pulses_before, "敌人进圈后立刻攻击")
 	check(sim.enemy_hp[0] < 1000.0, "进圈敌人受到伤害")
 	check(sim.attack_flash > 0.0, "攻击时播放武器特效")
+
+
+## 战士是范围横扫：一圈内多目标同时受伤，圈外不受伤；法师仍是单体
+func test_warrior_cleave_hits_area() -> void:
+	var sim := ProtoSim.new()
+	sim._select_char("warrior")
+	var r: float = sim.attack_radius
+	check(sim.attack_pierce >= 5, "战士穿透数足够横扫多个目标")
+
+	# 半径内 5 个不同方向的敌人 + 半径外 1 个
+	sim.enemy_pos.clear()
+	sim.enemy_hp.clear()
+	sim.enemy_id.clear()
+	for i in range(5):
+		var a: float = TAU * float(i) / 5.0
+		sim.enemy_pos.append(sim.player_pos + Vector2(cos(a), sin(a)) * (r * 0.6))
+		sim.enemy_hp.append(500.0)
+		sim.enemy_id.append(i)
+	sim.enemy_pos.append(sim.player_pos + Vector2(r * 2.0, 0.0))
+	sim.enemy_hp.append(500.0)
+	sim.enemy_id.append(99)
+
+	sim.attack_timer = 0.0
+	sim.step(0.016, Vector2.ZERO)
+
+	var hit_in := 0
+	for i in range(5):
+		if sim.enemy_hp[i] < 500.0:
+			hit_in += 1
+	check(hit_in == 5, "战士一刀命中范围内全部 5 个敌人")
+	check(sim.enemy_hp[5] >= 500.0, "范围外敌人未受伤")
+
+	# 对照：法师仍是单体攻击
+	var mage := ProtoSim.new()
+	mage._select_char("mage")
+	mage.enemy_pos.clear()
+	mage.enemy_hp.clear()
+	mage.enemy_id.clear()
+	for i in range(3):
+		mage.enemy_pos.append(mage.player_pos + Vector2(20.0 * float(i + 1), 0.0))
+		mage.enemy_hp.append(500.0)
+		mage.enemy_id.append(i)
+	mage.attack_timer = 0.0
+	mage.step(0.016, Vector2.ZERO)
+	var mage_hit := 0
+	for i in range(3):
+		if mage.enemy_hp[i] < 500.0:
+			mage_hit += 1
+	check(mage_hit == 1, "法师仍是单体攻击（命中 1 个）")
 
 
 func test_modifier_changes_attack() -> void:

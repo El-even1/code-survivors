@@ -32,13 +32,13 @@ const UI := {
 const CHARS := {
 	"zh": {
 		"mage":    {"name": "法师", "weapon": "法杖", "tag": "远程 · 追踪弹", "passive": "法力回复：攻速 +10%"},
-		"warrior": {"name": "战士", "weapon": "刀刃", "tag": "近战 · 高血量", "passive": "近战抗性：接触伤害 -30%"},
+		"warrior": {"name": "战士", "weapon": "刀刃", "tag": "近战 · 范围横扫", "passive": "近战抗性：接触伤害 -30%"},
 		"hunter":  {"name": "猎人", "weapon": "弓",   "tag": "远程 · 双发",   "passive": "移动速度 +15%"},
 		"priest":  {"name": "牧师", "weapon": "法书", "tag": "范围 · 吸血",   "passive": "吸血：击杀回复 2% 最大生命"},
 	},
 	"en": {
 		"mage":    {"name": "Mage",    "weapon": "Staff", "tag": "Ranged · Homing",    "passive": "Mana Regen: +10% attack speed"},
-		"warrior": {"name": "Warrior", "weapon": "Blade", "tag": "Melee · Tanky",      "passive": "Melee Resist: -30% contact damage"},
+		"warrior": {"name": "Warrior", "weapon": "Blade", "tag": "Melee · Cleave",      "passive": "Melee Resist: -30% contact damage"},
 		"hunter":  {"name": "Hunter",  "weapon": "Bow",   "tag": "Ranged · Twin Shot", "passive": "Move +15%"},
 		"priest":  {"name": "Priest",  "weapon": "Tome",  "tag": "AoE · Lifesteal",    "passive": "Lifesteal: +2% max HP on kill"},
 	},
