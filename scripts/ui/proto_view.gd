@@ -65,7 +65,7 @@ func _build_ui() -> void:
 	layer.add_child(stat_label)
 
 	var hint := Label.new()
-	hint.text = "WASD / Arrow keys to move"
+	hint.text = I18n.ui("hud_move")
 	hint.position = Vector2(18, 46)
 	hint.add_theme_font_size_override("font_size", 15)
 	hint.add_theme_color_override("font_color", Color(0.45, 0.5, 0.6))
@@ -89,7 +89,7 @@ func _build_ui() -> void:
 	upgrade_panel.add_child(dim)
 
 	var title := Label.new()
-	title.text = "Upgrade! Choose one"
+	title.text = I18n.ui("upgrade_title")
 	title.position = Vector2(Tuning.VIEW_W * 0.5 - 90, 210)
 	title.add_theme_font_size_override("font_size", 34)
 	title.add_theme_color_override("font_color", Color(1, 1, 1))
@@ -108,7 +108,7 @@ func _build_ui() -> void:
 
 	# Pause button (top-right, must be on CanvasLayer to follow screen)
 	pause_btn = Button.new()
-	pause_btn.text = "|| Pause"
+	pause_btn.text = I18n.ui("hud_pause")
 	pause_btn.position = Vector2(Tuning.VIEW_W - 130, 18)
 	pause_btn.size = Vector2(110, 36)
 	pause_btn.add_theme_font_size_override("font_size", 16)
@@ -119,7 +119,7 @@ func _build_ui() -> void:
 	var slot_y := Tuning.VIEW_H - 70
 	for i in range(3):
 		var btn := Button.new()
-		btn.text = "Slot %d" % (i + 1)
+		btn.text = I18n.ui("hud_slot") % (i + 1)
 		btn.position = Vector2(18 + i * 90, slot_y)
 		btn.size = Vector2(76, 34)
 		btn.add_theme_font_size_override("font_size", 14)
@@ -143,17 +143,17 @@ func _on_upgrade_picked(slot: int) -> void:
 func _toggle_pause() -> void:
 	is_paused = not is_paused
 	if is_paused:
-		pause_btn.text = "> Resume"
+		pause_btn.text = I18n.ui("hud_resume")
 		pipeline_editor.show_editor(sim.get_active_slot())
 	else:
-		pause_btn.text = "|| Pause"
+		pause_btn.text = I18n.ui("hud_pause")
 		pipeline_editor.hide_editor()
 
 
 ## Edit button clicked in editor resumes
 func resume_from_editor() -> void:
 	is_paused = false
-	pause_btn.text = "|| Pause"
+	pause_btn.text = I18n.ui("hud_pause")
 	pipeline_editor.hide_editor()
 
 
@@ -196,11 +196,11 @@ func _process(delta: float) -> void:
 			pass
 		elif not sim.alive:
 			result_label.visible = true
-			result_label.text = "Killed  Kills %d\n按 R 重新选择角色" % sim.kills
+			result_label.text = (I18n.ui("result_killed") % sim.kills) + "\n" + I18n.ui("result_restart")
 		elif sim.level_sim.is_victory:
 			result_label.visible = true
 			result_label.add_theme_color_override("font_color", Color(0.55, 1.0, 0.65))
-			result_label.text = "VICTORY  Kills %d\n按 R 重新选择角色" % sim.kills
+			result_label.text = (I18n.ui("result_victory") % sim.kills) + "\n" + I18n.ui("result_restart")
 
 	# AoE pulse decay
 	if pulse_t >= 0.0:
@@ -244,14 +244,18 @@ func _read_move() -> Vector2:
 
 
 func _update_stat() -> void:
-	var slot_tag := "Slot %d" % (sim.get_active_slot() + 1)
+	var slot_tag := I18n.ui("hud_slot") % (sim.get_active_slot() + 1)
 	if is_paused:
-		slot_tag += " [Pause]"
-	stat_label.text = "%s  HP %d/%d   Lv%d   XP %d/%d   Kills %d   OnScreen %d   Phase %s   %.1fs" % [
+		slot_tag += " " + I18n.ui("hud_paused")
+	stat_label.text = "%s  %s %d/%d   %s %d   %s %d/%d   %s %d   %s %d   %s %s   %.1fs" % [
 		slot_tag,
-		int(sim.player_hp), int(sim.player_max_hp),
-		sim.level, int(sim.xp), int(sim.xp_to_next),
-		sim.kills, sim.enemy_pos.size(), ProtoLogic.phase_name(sim.elapsed), sim.elapsed
+		I18n.ui("hud_hp"), int(sim.player_hp), int(sim.player_max_hp),
+		I18n.ui("hud_lv"), sim.level,
+		I18n.ui("hud_xp"), int(sim.xp), int(sim.xp_to_next),
+		I18n.ui("hud_kills"), sim.kills,
+		I18n.ui("hud_onscreen"), sim.enemy_pos.size(),
+		I18n.ui("hud_phase"), I18n.phase_name(sim.elapsed),
+		sim.elapsed
 	]
 
 
@@ -271,7 +275,7 @@ func _open_upgrade() -> void:
 			var info: Dictionary = ProtoLogic.Tuning_UPGRADES[id]
 			var lv: int = int(sim.owned.get(id, 0))
 			var maxlv: int = int(info["max_level"])
-			btn.text = "%s\nLv %d -> %d" % [info["name"], lv, lv + 1]
+			btn.text = "%s\nLv %d -> %d" % [I18n.upgrade_name(id), lv, lv + 1]
 			btn.disabled = false
 			btn.visible = true
 		else:

@@ -60,7 +60,7 @@ func _build_panel() -> void:
 	add_child(slot_row)
 	for i in range(3):
 		var btn := Button.new()
-		btn.text = "Slot %d" % (i + 1)
+		btn.text = I18n.ui("hud_slot") % (i + 1)
 		btn.size = Vector2(120, 40)
 		btn.add_theme_font_size_override("font_size", FS_BTN)
 		btn.pressed.connect(_on_select_slot.bind(i))
@@ -71,7 +71,7 @@ func _build_panel() -> void:
 	var list_title := Label.new()
 	self.list_title = list_title
 	list_title.position = Vector2(40, 150)
-	list_title.text = "Current pipeline command blocks"
+	list_title.text = I18n.ui("editor_current")
 	list_title.add_theme_font_size_override("font_size", FS_LABEL)
 	list_title.add_theme_color_override("font_color", Color(0.7, 0.8, 1.0))
 	add_child(list_title)
@@ -83,7 +83,7 @@ func _build_panel() -> void:
 
 	## Add button
 	add_btn = Button.new()
-	add_btn.text = "+ Add command block"
+	add_btn.text = I18n.ui("editor_add")
 	add_btn.position = Vector2(40, 540)
 	add_btn.size = Vector2(180, 44)
 	add_btn.add_theme_font_size_override("font_size", FS_BTN)
@@ -92,7 +92,7 @@ func _build_panel() -> void:
 
 	## Close button
 	close_btn = Button.new()
-	close_btn.text = "Close & return"
+	close_btn.text = I18n.ui("editor_close")
 	close_btn.position = Vector2(Tuning.VIEW_W - 240, Tuning.VIEW_H - 70)
 	close_btn.size = Vector2(200, 50)
 	close_btn.add_theme_font_size_override("font_size", FS_BTN)
@@ -103,7 +103,7 @@ func _build_panel() -> void:
 	var hint := Label.new()
 	self.hint = hint
 	hint.position = Vector2(40, Tuning.VIEW_H - 40)
-	hint.text = "Tip: combat can only switch slots; edit pipeline in pause/safe zone"
+	hint.text = I18n.ui("editor_tip")
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
 	add_child(hint)
@@ -118,7 +118,7 @@ func _build_template_popup() -> void:
 
 	var popup_title := Label.new()
 	popup_title.position = Vector2(40, 40)
-	popup_title.text = "Select command block template"
+	popup_title.text = I18n.ui("editor_popup_title")
 	popup_title.add_theme_font_size_override("font_size", FS_TITLE)
 	popup_title.add_theme_color_override("font_color", Color(1, 1, 1))
 	template_popup.add_child(popup_title)
@@ -135,7 +135,7 @@ func _build_template_popup() -> void:
 	template_scroll.add_child(template_grid)
 
 	var close_popup := Button.new()
-	close_popup.text = "Close"
+	close_popup.text = I18n.ui("editor_popup_close")
 	close_popup.position = Vector2(Tuning.VIEW_W - 240, Tuning.VIEW_H - 70)
 	close_popup.size = Vector2(200, 50)
 	close_popup.add_theme_font_size_override("font_size", FS_BTN)
@@ -173,7 +173,7 @@ func hide_editor() -> void:
 func refresh_ui() -> void:
 	if not editor_shown:
 		return
-	title.text = "Pipeline Editor · Slot %d" % (editing_slot + 1)
+	title.text = I18n.ui("editor_title") % (editing_slot + 1)
 
 	## Update slot button states
 	for i in range(slot_buttons.size()):
@@ -195,24 +195,20 @@ func refresh_ui() -> void:
 		row.add_theme_constant_override("separation", 8)
 
 		var name_lbl := Label.new()
-		name_lbl.text = "%s (Lv%d)" % [block.id, block.level]
+		name_lbl.text = "%s (Lv%d)" % [I18n.block_name(block.id), block.level]
 		name_lbl.add_theme_font_size_override("font_size", FS_LABEL)
 		name_lbl.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
 		name_lbl.custom_minimum_size = Vector2(300, 0)
 		row.add_child(name_lbl)
 
 		var kind_lbl := Label.new()
-		var kind_map := {
-			CommandBlock.KIND_ACTION: "Action",
-			CommandBlock.KIND_MODIFIER: "Modifier",
-		}
-		kind_lbl.text = kind_map.get(block.kind, "?")
+		kind_lbl.text = I18n.kind_label(block.kind)
 		kind_lbl.add_theme_font_size_override("font_size", 13)
 		kind_lbl.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
 		row.add_child(kind_lbl)
 
 		var tag_lbl := Label.new()
-		tag_lbl.text = block.tag if block.tag != "" else "—"
+		tag_lbl.text = I18n.tag_label(block.tag)
 		tag_lbl.add_theme_font_size_override("font_size", 13)
 		tag_lbl.add_theme_color_override("font_color", Color(0.8, 0.9, 0.7))
 		row.add_child(tag_lbl)
@@ -249,21 +245,19 @@ func _open_template_popup() -> void:
 	keys.sort()
 
 	for key in keys:
-		var tpl: Dictionary = templates[key]
 		var row := HBoxContainer.new()
 		row.size = Vector2(460, 40)
 		row.add_theme_constant_override("separation", 8)
 
 		var name_lbl := Label.new()
-		var desc: String = tpl.get("desc", key)
-		name_lbl.text = "%s · %s" % [desc, key]
+		name_lbl.text = I18n.block_name(key)
 		name_lbl.add_theme_font_size_override("font_size", FS_LABEL)
 		name_lbl.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
 		name_lbl.custom_minimum_size = Vector2(320, 0)
 		row.add_child(name_lbl)
 
 		var add_tpl_btn := Button.new()
-		add_tpl_btn.text = "Add"
+		add_tpl_btn.text = I18n.ui("editor_add_btn")
 		add_tpl_btn.size = Vector2(80, 36)
 		add_tpl_btn.add_theme_font_size_override("font_size", 14)
 		add_tpl_btn.pressed.connect(_on_add_template.bind(key))

@@ -1,7 +1,9 @@
 extends SceneTree
 
-## 阶段二截图：跑 main.tscn 若干帧，关掉管线编辑/暂停后抓 viewport 存 PNG。
-## 用法：godot --path . --script tests/screenshot.gd -- --char=warrior
+## 阶段二截图：跑 main.tscn 若干帧后抓 viewport 存 PNG。
+## 用法：
+##   godot --path . --script tests/screenshot.gd -- --char=warrior --lang=zh
+##   godot --path . --script tests/screenshot.gd -- --char=warrior --lang=zh --editor
 
 const OUT_DIR := "res://screenshots"
 
@@ -13,10 +15,14 @@ func _init() -> void:
 func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
 
-	# 可选角色参数：-- --char=mage|warrior|hunter|priest
+	var want_editor := false
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--char="):
 			GameStateData.selected_char = arg.substr(7)
+		elif arg.begins_with("--lang="):
+			GameStateData.language = arg.substr(7)
+		elif arg == "--editor":
+			want_editor = true
 
 	var scene: PackedScene = load("res://scenes/main.tscn")
 	if scene == null:
@@ -26,7 +32,6 @@ func _run() -> void:
 	var inst := scene.instantiate()
 	root.add_child(inst)
 
-	# 把可能打开的管线编辑器关掉，恢复战斗（main.tscn 根节点挂了 proto_view.gd）
 	if inst.has_method("resume_from_editor"):
 		inst.resume_from_editor()
 
@@ -41,19 +46,28 @@ func _run() -> void:
 		inst.sim.enemy_hp.append(2000.0)
 		inst.sim.enemy_id.append(9000 + i)
 
-	# 等到攻击瞬间再抓图，确保武器特效（战士横扫扇形等）出现在画面里
-	var got_flash := false
-	for i in range(240):
-		await process_frame
-		if inst.sim.attack_flash > 0.10:
-			got_flash = true
-			break
-	if not got_flash:
-		push_warning("未捕捉到攻击瞬间，仍保存当前帧")
+	var suffix := "%s_%s" % [GameStateData.selected_char, GameStateData.language]
+
+	if want_editor:
+		# 打开管线编辑器（暂停态）验证编辑器 UI 文案
+		inst._toggle_pause()
+		for i in range(10):
+			await process_frame
+		suffix += "_editor"
+	else:
+		# 等到攻击瞬间再抓图，确保武器特效出现在画面里
+		var got_flash := false
+		for i in range(240):
+			await process_frame
+			if inst.sim.attack_flash > 0.10:
+				got_flash = true
+				break
+		if not got_flash:
+			push_warning("未捕捉到攻击瞬间，仍保存当前帧")
 
 	await RenderingServer.frame_post_draw
 	var img := root.get_texture().get_image()
-	var path := OUT_DIR + "/stage2_battle_%s.png" % GameStateData.selected_char
+	var path := OUT_DIR + "/stage2_battle_%s.png" % suffix
 	var err := img.save_png(ProjectSettings.globalize_path(path))
 	if err != OK:
 		push_error("截图保存失败: %d" % err)

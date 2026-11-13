@@ -6,7 +6,7 @@ extends Control
 
 var sim: ProtoSim
 
-const NODE_W := 90.0
+const NODE_W := 120.0
 const NODE_H := 32.0
 const GAP := 18.0
 const PAD := 14.0
@@ -136,16 +136,9 @@ func _kind_color(kind: String) -> Color:
 
 
 func _kind_label(kind: String) -> String:
-	if kind == CommandBlock.KIND_ACTION:
-		return "Action"
-	elif kind == CommandBlock.KIND_MODIFIER:
-		return "Modifier"
-	return "?"
+	return I18n.kind_label(kind)
 
 
-## "action_aoe" → "White Circle AoE", look up template desc
+## "action_aoe" → 当前语言的短名（中文「白圈 AoE」/ 英文 "White Circle AoE"）
 func _short_name(block_id: String) -> String:
-	var tpl = CommandBlock.BLOCK_TEMPLATES.get(block_id)
-	if tpl != null:
-		return String(tpl.get("desc", block_id))
-	return block_id
+	return I18n.block_name(block_id)
