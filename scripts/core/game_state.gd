@@ -5,7 +5,9 @@ extends RefCounted
 ## 不用 autoload：headless --script 测试里 autoload 尚未注册，静态变量两种模式都能用
 
 static var selected_char := "mage"
+static var language := "zh"   # 界面语言：zh / en
 
 
 static func reset() -> void:
 	selected_char = "mage"
+	language = "zh"

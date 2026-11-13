@@ -45,6 +45,25 @@ func _run() -> void:
 	start_view.cycle_selection(1)
 	check(start_view.commit_selection() == "warrior", "重新提交为战士")
 	check(GameStateData.selected_char == "warrior", "全局状态更新为战士")
+
+	# 3. 多语言切换（中 / 英）
+	start_view.set_language("zh")
+	check(GameStateData.language == "zh", "语言设置为中文")
+	check(I18n.ui("start") == "开 始 游 戏", "中文开始按钮文案")
+	check(I18n.ui("lang_switch") == "English", "中文界面显示 English 切换按钮")
+	check(I18n.char_info("mage", "name") == "法师", "中文角色名")
+	check(I18n.char_info("mage", "tag") == "远程 · 追踪弹", "中文角色定位")
+	start_view.toggle_language()
+	check(GameStateData.language == "en", "切换后语言为英文")
+	check(I18n.ui("start") == "S T A R T", "英文开始按钮文案")
+	check(I18n.ui("lang_switch") == "中文", "英文界面显示中文切换按钮")
+	check(I18n.char_info("mage", "name") == "Mage", "英文角色名")
+	check(I18n.char_info("warrior", "passive").begins_with("Melee Resist"), "英文被动文案")
+	start_view.toggle_language()
+	check(GameStateData.language == "zh", "再切换回中文")
+	start_view.set_language("xx")
+	check(GameStateData.language == "zh", "非法语言值被忽略")
+
 	start_view.queue_free()
 	await process_frame
 
