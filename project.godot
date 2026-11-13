@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Code Survivors"
 config/description="Survivors-like prototype with visual pipeline building (trigger-condition-action-modifier)"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/start.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [display]

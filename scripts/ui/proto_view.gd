@@ -30,6 +30,8 @@ var _current_options: Array = []
 ## Font (default font, prototype phase no resources)
 func _ready() -> void:
 	sim = ProtoSim.new()
+	# 应用选人界面选择的角色（属性、武器、默认管线槽）
+	sim._select_char(GameStateData.selected_char)
 	camera_pos = sim.player_pos - Vector2(Tuning.VIEW_W * 0.5, Tuning.VIEW_H * 0.5)
 	cam2d.global_position = sim.player_pos
 	_build_ui()
@@ -171,6 +173,10 @@ func _input(event: InputEvent) -> void:
 		if event.keycode == KEY_ESCAPE:
 			_toggle_pause()
 			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_R and (not sim.alive or sim.level_sim.is_victory):
+			# 死亡 / 通关后按 R 回到选人界面
+			get_tree().change_scene_to_file("res://scenes/start.tscn")
+			get_viewport().set_input_as_handled()
 
 
 func _process(delta: float) -> void:
@@ -190,7 +196,11 @@ func _process(delta: float) -> void:
 			pass
 		elif not sim.alive:
 			result_label.visible = true
-			result_label.text = "Killed  Kills %d" % sim.kills
+			result_label.text = "Killed  Kills %d\n按 R 重新选择角色" % sim.kills
+		elif sim.level_sim.is_victory:
+			result_label.visible = true
+			result_label.add_theme_color_override("font_color", Color(0.55, 1.0, 0.65))
+			result_label.text = "VICTORY  Kills %d\n按 R 重新选择角色" % sim.kills
 
 	# AoE pulse decay
 	if pulse_t >= 0.0:
