@@ -321,6 +321,10 @@ func _draw() -> void:
 	draw_rect(Rect2(sim.player_pos - Vector2(half_p, half_p),
 		Vector2(Tuning.PLAYER_SIZE, Tuning.PLAYER_SIZE)), Color(0.7, 0.85, 1.0), false, 1.5)
 
+	# Weapon attack visual (flash right after attack)
+	if sim.attack_flash > 0.0:
+		_draw_weapon_attack(sim.attack_flash)
+
 	# Floating damage text
 	_draw_dmg_text()
 
@@ -359,3 +363,53 @@ func _draw_dmg_text() -> void:
 		var fs := 18 if cnt <= 1 else 22
 		draw_string(font, p - Vector2(txt.length() * fs * 0.3, 0), txt,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 0.93, 0.55, a))
+
+
+## Weapon attack visual: shows what weapon is attacking right after each hit
+## mage=Staff beam, warrior=Blade swing arc, hunter=Bow double shot, priest=Tome pulse ring
+func _draw_weapon_attack(flash: float) -> void:
+	var pct: float = clampf(flash / 0.15, 0.0, 1.0)   # 1.0 at hit, fading to 0
+	var alpha: float = 0.9 * pct
+	var width: float = 2.5 + 2.0 * pct
+	var r: float = sim.attack_radius
+	var p: Vector2 = sim.player_pos
+
+	# Facing direction: toward nearest enemy, fallback +X
+	var face: Vector2 = Vector2(1, 0)
+	var best_d2: float = 999999.0
+	for ep in sim.enemy_pos:
+		var d2: float = ep.distance_squared_to(p)
+		if d2 < best_d2:
+			best_d2 = d2
+			face = (ep - p).normalized()
+
+	if sim.char_id == "mage":
+		# Staff: white beam toward nearest enemy
+		var beam_end: Vector2 = p + face * r
+		var beam_col := Color(1, 1, 1, alpha)
+		draw_line(p, beam_end, beam_col, width)
+		# tip flare
+		draw_circle(beam_end, 6.0 * pct, beam_col, true)
+
+	elif sim.char_id == "warrior":
+		# Blade: red swing arc around player, facing enemy
+		var ang: float = face.angle()
+		var span: float = 1.4  # radians
+		var arc_col := Color(1, 0.35, 0.35, alpha)
+		draw_arc(p, r * 0.85, ang - span * 0.5, ang + span * 0.5, 32, arc_col, width)
+		draw_circle(p, 4.0 * pct, arc_col, true)
+
+	elif sim.char_id == "hunter":
+		# Bow: two diverging white shots
+		var perp: Vector2 = Vector2(-face.y, face.x)
+		var shot_len: float = r * 0.9
+		var shot_col := Color(1, 1, 1, alpha)
+		draw_line(p, p + face * shot_len - perp * (20.0 * pct), shot_col, width)
+		draw_line(p, p + face * shot_len + perp * (20.0 * pct), shot_col, width)
+
+	elif sim.char_id == "priest":
+		# Tome: white pulse ring expanding from player
+		var ring_r: float = r * (0.5 + 0.8 * (1.0 - pct))
+		var ring_col := Color(1, 1, 1, alpha * 0.7)
+		draw_circle(p, ring_r, ring_col, false, 2.0 + 2.0 * pct)
+		draw_circle(p, 5.0 * pct, ring_col, true)

@@ -43,6 +43,7 @@ var attack_radius := 108.0
 var attack_pierce := 1
 var attack_multi := 1
 var attack_track := false
+var attack_flash := 0.0   # 攻击闪现倒计时，供视觉层渲染武器攻击特效
 
 var magnet_radius := Tuning.MAGNET_RADIUS
 var aoe_timer := 0.0
@@ -328,10 +329,13 @@ func step(delta: float, input_dir: Vector2) -> void:
 
 	_move_enemies(delta)
 
-	aoe_timer -= delta
-	if aoe_timer <= 0.0:
-		aoe_timer = aoe_cooldown
+	attack_timer -= delta
+	if attack_timer <= 0.0:
+		attack_timer = attack_cooldown
+		attack_flash = 0.15
 		_fire_attack()
+	if attack_flash > 0.0:
+		attack_flash -= delta
 
 	var pipeline_events := _execute_pipeline(delta)
 	_apply_pipeline_events(pipeline_events)
