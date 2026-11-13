@@ -103,6 +103,29 @@ func _run() -> void:
 	check(absf(battle2.sim.player_max_hp - 100.0) < 0.001, "法师血量 100")
 	var p0m: Array = battle2.sim.get_pipeline(0)
 	check(p0m.size() == 1 and p0m[0].id == "action_projectile", "法师默认指令块是投射物")
+
+	# 5. 背包：管线编辑入口；暂停只暂停、不再改管线
+	check(battle2.backpack != null, "战斗场景有背包")
+	check(battle2.backpack.is_open() == false, "背包默认关闭")
+	battle2._toggle_pause()
+	check(battle2.is_paused == true, "Esc 暂停生效")
+	check(battle2.backpack.is_open() == false, "暂停不再打开管线编辑")
+	battle2._toggle_pause()
+	check(battle2.is_paused == false, "再按 Esc 恢复")
+
+	battle2.toggle_backpack()
+	check(battle2.backpack.is_open() == true, "B 打开背包")
+	battle2.backpack.editing_slot = 0
+	var blocks_before: int = battle2.sim.get_pipeline(0).size()
+	var radius_before: float = battle2.sim.attack_radius
+	battle2.backpack.add_block("mod_range")
+	check(battle2.sim.get_pipeline(0).size() == blocks_before + 1, "背包里添加指令块进入管线")
+	check(battle2.sim.attack_radius > radius_before, "加修饰块后攻击数值立刻变化（效果可见）")
+	battle2.backpack._on_remove_block(blocks_before)
+	check(battle2.sim.get_pipeline(0).size() == blocks_before, "背包里删除指令块生效")
+	battle2.toggle_backpack()
+	check(battle2.backpack.is_open() == false, "再按 B 关闭背包")
+
 	battle2.queue_free()
 	await process_frame
 

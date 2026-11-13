@@ -19,10 +19,11 @@ var result_label: Label
 var upgrade_panel: CanvasLayer
 var upgrade_buttons: Array = []
 
-## Pause & pipeline editor
+## Pause & backpack & pipeline HUD
 var pause_btn: Button
+var pause_hint: Label
 var slot_buttons: Array = []
-var pipeline_editor
+var backpack
 var pipeline_hud
 var is_paused := false
 var _current_options: Array = []
@@ -36,13 +37,6 @@ func _ready() -> void:
 	cam2d.global_position = sim.player_pos
 	_build_ui()
 
-	# Pipeline editor (pause/safe zone opens)
-	var pipeline_script = load("res://scripts/ui/pipeline_editor.gd")
-	if pipeline_script != null:
-		pipeline_editor = pipeline_script.new()
-		pipeline_editor.init(sim)
-		add_child(pipeline_editor)
-
 	# Right-bottom mini pipeline line (battle real-time flash, let player see pipeline running)
 	# 必须放进 CanvasLayer：否则 Control 挂在 Node2D 下会跟着摄像机漂到玩家旁边
 	var hud_script = load("res://scripts/ui/pipeline_hud.gd")
@@ -54,6 +48,13 @@ func _ready() -> void:
 		pipeline_hud.size = Vector2(Tuning.VIEW_W, Tuning.VIEW_H)
 		pipeline_hud.position = Vector2.ZERO
 		hud_layer.add_child(pipeline_hud)
+
+	# 背包最后创建 → CanvasLayer 顺序最靠上，打开时能盖住 HUD 与管线链条
+	var bp_script = load("res://scripts/ui/backpack_view.gd")
+	if bp_script != null:
+		backpack = bp_script.new()
+		backpack.init(sim)
+		add_child(backpack)
 
 
 ## Initialize: build UI, build pipeline editor
@@ -118,6 +119,24 @@ func _build_ui() -> void:
 	pause_btn.pressed.connect(_toggle_pause)
 	layer.add_child(pause_btn)
 
+	# Backpack button (top-right, left of pause)
+	var bag_btn := Button.new()
+	bag_btn.text = I18n.ui("hud_backpack")
+	bag_btn.position = Vector2(Tuning.VIEW_W - 260, 18)
+	bag_btn.size = Vector2(120, 36)
+	bag_btn.add_theme_font_size_override("font_size", 16)
+	bag_btn.pressed.connect(toggle_backpack)
+	layer.add_child(bag_btn)
+
+	# Paused hint (center screen)
+	pause_hint = Label.new()
+	pause_hint.text = I18n.ui("pause_hint")
+	pause_hint.position = Vector2(Tuning.VIEW_W * 0.5 - 150.0, Tuning.VIEW_H * 0.5 - 20.0)
+	pause_hint.add_theme_font_size_override("font_size", 28)
+	pause_hint.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
+	pause_hint.visible = false
+	layer.add_child(pause_hint)
+
 	# Slot switch buttons (bottom-left, usable in combat)
 	var slot_y := Tuning.VIEW_H - 70
 	for i in range(3):
@@ -142,40 +161,58 @@ func _on_upgrade_picked(slot: int) -> void:
 	# 剩余 pending_levels 由 _process 下一帧处理，避免连续弹面板
 
 
-## Toggle pause
+## Toggle pause（只管暂停，不再打开管线编辑）
 func _toggle_pause() -> void:
 	is_paused = not is_paused
-	if is_paused:
-		pause_btn.text = I18n.ui("hud_resume")
-		pipeline_editor.show_editor(sim.get_active_slot())
-	else:
-		pause_btn.text = I18n.ui("hud_pause")
-		pipeline_editor.hide_editor()
+	pause_btn.text = I18n.ui("hud_resume") if is_paused else I18n.ui("hud_pause")
+	if pause_hint != null:
+		pause_hint.visible = is_paused
 
 
-## Edit button clicked in editor resumes
+## 打开 / 关闭背包（管线编辑 + 升级查看）
+func toggle_backpack() -> void:
+	if backpack == null:
+		return
+	# 背包与暂停互斥：开背包自动取消暂停状态
+	if not backpack.is_open() and is_paused:
+		_toggle_pause()
+	backpack.toggle()
+	if backpack.is_open():
+		pause_hint.visible = false
+
+
+## 兼容旧调用（截图脚本用）：回到战斗
 func resume_from_editor() -> void:
 	is_paused = false
 	pause_btn.text = I18n.ui("hud_pause")
-	pipeline_editor.hide_editor()
+	if pause_hint != null:
+		pause_hint.visible = false
+	if backpack != null:
+		backpack.close()
 
 
 func _on_switch_slot(slot: int) -> void:
-	if is_paused:
-		# Pause: switch edit slot
-		pipeline_editor.show_editor(slot)
-	else:
-		# Combat: switch active slot
-		if sim.switch_slot(slot):
-			_update_stat()
+	# 战斗中切换生效槽位（背包打开时用背包里的槽位按钮编辑）
+	if backpack != null and backpack.is_open():
+		return
+	if sim.switch_slot(slot):
+		_update_stat()
 
 
-## Keyboard pause: Esc
+## Keyboard: Esc 暂停 / B 背包 / R 结算后回选人
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
-			_toggle_pause()
+			# 背包优先关闭，其次才切暂停
+			if backpack != null and backpack.is_open():
+				backpack.close()
+			else:
+				_toggle_pause()
 			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_B:
+			if sim.alive and not upgrade_panel.visible:
+				toggle_backpack()
+				get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_R and (not sim.alive or sim.level_sim.is_victory):
 			# 死亡 / 通关后按 R 回到选人界面
 			get_tree().change_scene_to_file("res://scenes/start.tscn")
@@ -183,8 +220,8 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	# Freeze world when upgrade panel or pipeline editor open
-	if upgrade_panel.visible or pipeline_editor.editor_visible():
+	# Freeze world when upgrade panel or backpack open
+	if upgrade_panel.visible or (backpack != null and backpack.is_open()):
 		queue_redraw()
 		return
 

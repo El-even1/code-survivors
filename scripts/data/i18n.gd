@@ -27,6 +27,14 @@ const UI := {
 		"hud_onscreen": "同屏",
 		"hud_phase": "阶段",
 		"hud_pipeline": "当前管线（Esc 编辑）",
+		"hud_backpack": "背包 (B)",
+		"pause_hint": "已暂停 · Esc 继续",
+		"backpack_title": "背包",
+		"backpack_pipeline": "管线",
+		"backpack_upgrades": "升级",
+		"backpack_stats": "当前攻击：伤害 %d · 范围 %d · 间隔 %.2fs · 穿透 %d",
+		"backpack_no_upgrades": "还没有升级（击杀敌人捡经验升级后出现）",
+		"backpack_close": "关闭",
 		"hud_pause": "|| 暂停",
 		"hud_resume": "> 继续",
 		"hud_paused": "[暂停]",
@@ -65,6 +73,14 @@ const UI := {
 		"hud_onscreen": "OnScreen",
 		"hud_phase": "Phase",
 		"hud_pipeline": "Pipeline (Esc to edit)",
+		"hud_backpack": "Backpack (B)",
+		"pause_hint": "Paused · Esc to resume",
+		"backpack_title": "Backpack",
+		"backpack_pipeline": "Pipeline",
+		"backpack_upgrades": "Upgrades",
+		"backpack_stats": "Attack: DMG %d · Range %d · CD %.2fs · Pierce %d",
+		"backpack_no_upgrades": "No upgrades yet (level up by collecting XP)",
+		"backpack_close": "Close",
 		"hud_pause": "|| Pause",
 		"hud_resume": "> Resume",
 		"hud_paused": "[Paused]",
@@ -154,6 +170,34 @@ const UPGRADES := {
 	},
 }
 
+## 指令块效果说明（背包里显示，回答「这块是干什么的」）
+const BLOCK_DESC := {
+	"zh": {
+		"action_projectile": "发射投射物造成伤害",
+		"action_melee": "横扫身边一圈敌人",
+		"action_field": "在脚下召唤持续伤害区域",
+		"action_aoe": "以自身为中心范围伤害",
+		"mod_penetrate": "每次多打 2 个敌人",
+		"mod_multi": "每轮多打 1 次",
+		"mod_track": "攻击自动追踪敌人",
+		"mod_range": "攻击范围 ×1.30",
+		"mod_cooldown": "攻击间隔 ×0.86（更快）",
+		"mod_dot": "命中附加持续伤害",
+	},
+	"en": {
+		"action_projectile": "Fire a projectile",
+		"action_melee": "Cleave all enemies around you",
+		"action_field": "Summon a damage-over-time field",
+		"action_aoe": "Area damage centered on you",
+		"mod_penetrate": "Hit 2 more enemies per swing",
+		"mod_multi": "One extra hit per attack",
+		"mod_track": "Attacks home in on enemies",
+		"mod_range": "Attack range ×1.30",
+		"mod_cooldown": "Attack interval ×0.86 (faster)",
+		"mod_dot": "Hits apply damage over time",
+	},
+}
+
 ## 战斗阶段名
 const PHASES := {
 	"zh": {"survive": "生存期", "grow": "成长期", "pressure": "压力期", "limit": "极限期"},
@@ -221,6 +265,17 @@ static func tag_label(tag: String) -> String:
 		return "—"
 	var table: Dictionary = TAGS.get(_lang(), TAGS["zh"])
 	return String(table.get(tag, tag))
+
+
+## 指令块效果说明（背包里显示）
+static func block_desc(block_id: String) -> String:
+	var table: Dictionary = BLOCK_DESC.get(_lang(), BLOCK_DESC["zh"])
+	if table.has(block_id):
+		return String(table[block_id])
+	var tpl = CommandBlock.BLOCK_TEMPLATES.get(block_id)
+	if tpl != null:
+		return String(tpl.get("desc", block_id))
+	return block_id
 
 
 ## 按时间返回当前阶段名（本地化）

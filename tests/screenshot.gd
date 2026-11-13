@@ -15,14 +15,14 @@ func _init() -> void:
 func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
 
-	var want_editor := false
+	var want_backpack := false
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--char="):
 			GameStateData.selected_char = arg.substr(7)
 		elif arg.begins_with("--lang="):
 			GameStateData.language = arg.substr(7)
-		elif arg == "--editor":
-			want_editor = true
+		elif arg == "--backpack":
+			want_backpack = true
 
 	var scene: PackedScene = load("res://scenes/main.tscn")
 	if scene == null:
@@ -48,12 +48,14 @@ func _run() -> void:
 
 	var suffix := "%s_%s" % [GameStateData.selected_char, GameStateData.language]
 
-	if want_editor:
-		# 打开管线编辑器（暂停态）验证编辑器 UI 文案
-		inst._toggle_pause()
+	if want_backpack:
+		# 打开背包验证管线编辑 + 升级 UI；顺手加一个修饰块展示「指令链 → 数值变化」
+		inst.toggle_backpack()
+		inst.backpack.editing_slot = 0
+		inst.backpack.add_block("mod_range")
 		for i in range(10):
 			await process_frame
-		suffix += "_editor"
+		suffix += "_backpack"
 	else:
 		# 等到攻击瞬间再抓图，确保武器特效出现在画面里
 		var got_flash := false
