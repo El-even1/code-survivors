@@ -35,6 +35,7 @@ func _init() -> void:
 	test_auto_attack_hits_nearest()
 	test_attack_only_when_in_range()
 	test_warrior_cleave_hits_area()
+	test_block_library_and_sockets()
 	test_modifier_changes_attack()
 	test_pipeline_empty()
 	test_pipeline_modifier_chain()
@@ -327,6 +328,70 @@ func test_warrior_cleave_hits_area() -> void:
 		if mage.enemy_hp[i] < 500.0:
 			mage_hit += 1
 	check(mage_hit == 1, "法师仍是单体攻击（命中 1 个）")
+
+
+## 指令块库：通用 + 角色专属；只能装备掉落的块；插槽类型匹配
+func test_block_library_and_sockets() -> void:
+	# 库：通用块人人可用，专属块按角色隔离
+	check(BlockLibrary.is_allowed("mage", "mod_penetrate"), "法师可用通用块")
+	check(BlockLibrary.is_allowed("mage", "mod_track"), "法师可用专属追踪")
+	check(BlockLibrary.is_allowed("mage", "mod_range") == false, "法师不能用战士专属范围块")
+	check(BlockLibrary.is_allowed("warrior", "mod_range"), "战士可用专属范围块")
+	check(BlockLibrary.is_allowed("warrior", "mod_track") == false, "战士不能用法师专属追踪块")
+
+	var sim := ProtoSim.new()
+	sim._select_char("warrior")
+	check(sim.equip_socket(0, 1, "mod_range") == false, "没有掉落不能凭空装备")
+	sim.grant_block("mod_range")
+	check(sim.block_stock("mod_range") == 1, "拾取后库存 +1")
+	var r0: float = sim.attack_radius
+	check(sim.equip_socket(0, 1, "mod_range"), "掉落块可以装进修饰槽")
+	check(sim.slot_modifier_ids(0).size() == 1, "修饰槽里有 1 个块")
+	check(sim.attack_radius > r0, "装备后攻击范围立刻变化")
+	check(sim.block_stock("mod_range") == 0, "装备后库存 -1")
+	sim.grant_block("action_melee")
+	check(sim.equip_socket(0, 2, "action_melee") == false, "主动块不能放进修饰槽")
+	check(sim.unequip_socket(0, 1), "卸下修饰槽成功")
+	check(sim.block_stock("mod_range") == 1, "卸下后块退回库存")
+
+	# 掉落池只包含本角色可用块
+	check(BlockLibrary.DROP_CHANCE > 0.0 and BlockLibrary.DROP_CHANCE < 1.0, "掉落概率在 (0,1) 之间")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12345
+	var pool := BlockLibrary.for_char("mage")
+	var all_ok := true
+	for i in range(20):
+		var drop_id := BlockLibrary.roll_drop("mage", rng)
+		if not pool.has(drop_id):
+			all_ok = false
+	check(all_ok, "掉落只会掉本角色可用块")
+
+	# 链路方向：修饰槽必须从左往右依次填，不能跳格
+	var sim2 := ProtoSim.new()
+	sim2._select_char("warrior")
+	sim2.grant_block("mod_penetrate")
+	check(sim2.can_equip_socket(0, 2, "mod_penetrate") == "chain_gap", "修饰槽不能跳过前一格")
+	check(sim2.can_equip_socket(0, 1, "mod_penetrate") == "", "从左往右第一格可以放")
+	check(sim2.equip_socket(0, 1, "mod_penetrate"), "装入第一格成功")
+	sim2.grant_block("mod_cooldown")
+	check(sim2.equip_socket(0, 2, "mod_cooldown"), "装入第二格成功")
+	check(sim2.slot_mana_used(0) == 25 + 15 + 15, "蓝量按块累计")
+
+	# 蓝量上限：超过就不能再装（战士可用 mod_range，20 蓝）
+	sim2.grant_block("mod_range")
+	check(sim2.can_equip_socket(0, 3, "mod_range") == "mana_low", "蓝量不足时拒绝装备")
+	check(sim2.equip_socket(0, 3, "mod_range") == false, "蓝量不足装不进去")
+
+	# 存放区上限：最多 6 格
+	var sim3 := ProtoSim.new()
+	sim3._select_char("mage")
+	var added := 0
+	for i in range(20):
+		if sim3.grant_block("mod_penetrate"):
+			added += 1
+	check(added == BlockLibrary.STORAGE_CAP, "存放区最多 6 格")
+	check(sim3.storage_used() == BlockLibrary.STORAGE_CAP, "存放区计数到上限")
+	check(sim3.storage_free() == 0, "存放区没有空位")
 
 
 func test_modifier_changes_attack() -> void:

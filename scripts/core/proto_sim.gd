@@ -92,6 +92,13 @@ var pending_levels := 0
 
 var _rng := RandomNumberGenerator.new()
 
+## ---------- 指令块掉落 / 库存 ----------
+var block_inventory: Dictionary = {}      # block_id -> 未装备数量
+var block_drop_pos: Array[Vector2] = []   # 地上掉落的指令块位置
+var block_drop_id: Array[String] = []     # 对应 block_id
+var block_toast := ""                     # 拾取提示（block_id）
+var block_toast_timer := 0.0
+
 
 func _init(seed_value: int = 20261111) -> void:
 	_rng.seed = seed_value
@@ -150,6 +157,12 @@ func _select_char(cid: String) -> void:
 
 	_recalc_attack_stats()
 	_reset_slots_for_char(cid)
+	# 新角色开局：清空掉落与库存（指令块只能靠击杀掉落获得）
+	block_inventory.clear()
+	block_drop_pos.clear()
+	block_drop_id.clear()
+	block_toast = ""
+	block_toast_timer = 0.0
 	level_sim.start_sector("sector_a")
 
 
@@ -250,9 +263,229 @@ func remove_command(slot_idx: int, block_idx: int) -> bool:
 		return false
 	if block_idx < 0 or block_idx >= slots[slot_idx].size():
 		return false
+	var block: CommandBlock = slots[slot_idx][block_idx]
 	slots[slot_idx].remove_at(block_idx)
+	# 卸下的指令块退回库存，可再装备到别的槽位
+	block_inventory[block.id] = block_stock(block.id) + 1
 	_apply_all_modifiers()
 	return true
+
+
+## ---------- 指令块：掉落 → 库存 → 装备 ----------
+## 存放区有格子上限，满了就捡不进来（掉落留在地上）
+func grant_block(block_id: String) -> bool:
+	if block_id == "":
+		return false
+	if storage_used() >= BlockLibrary.STORAGE_CAP:
+		block_toast = "storage_full"
+		block_toast_timer = 2.0
+		return false
+	block_inventory[block_id] = block_stock(block_id) + 1
+	block_toast = block_id
+	block_toast_timer = 2.4
+	return true
+
+
+func block_stock(block_id: String) -> int:
+	return int(block_inventory.get(block_id, 0))
+
+
+## 该角色可用的全部指令块 id（通用 + 专属）
+func allowed_blocks() -> Array[String]:
+	return BlockLibrary.for_char(char_id)
+
+
+## 装备一个掉落指令块到指定槽位：必须角色可用且库存 > 0
+func equip_block(slot_idx: int, block_id: String) -> bool:
+	if slot_idx < 0 or slot_idx >= slots.size():
+		return false
+	if not BlockLibrary.is_allowed(char_id, block_id):
+		return false
+	if block_stock(block_id) <= 0:
+		return false
+	var block := CommandBlock.from_template(block_id, 1, "white")
+	slots[slot_idx].append(block)
+	block_inventory[block_id] = block_stock(block_id) - 1
+	_apply_all_modifiers()
+	return true
+
+
+## ---------- 工坊插槽（背包拖拽用）----------
+## socket 0 = 主动槽；1..MOD_SOCKETS = 修饰槽
+const MOD_SOCKETS := 3
+
+
+func slot_action_id(slot_idx: int) -> String:
+	if slot_idx < 0 or slot_idx >= slots.size():
+		return ""
+	for b in slots[slot_idx]:
+		if b.kind == CommandBlock.KIND_ACTION:
+			return String(b.id)
+	return ""
+
+
+func slot_modifier_ids(slot_idx: int) -> Array:
+	var out: Array = []
+	if slot_idx < 0 or slot_idx >= slots.size():
+		return out
+	for b in slots[slot_idx]:
+		if b.kind == CommandBlock.KIND_MODIFIER:
+			out.append(String(b.id))
+	return out
+
+
+func _modifier_indices(slot_idx: int) -> Array:
+	var out: Array = []
+	var arr: Array = slots[slot_idx]
+	for i in range(arr.size()):
+		var b: CommandBlock = arr[i]
+		if b.kind == CommandBlock.KIND_MODIFIER:
+			out.append(i)
+	return out
+
+
+## ---------- 建造约束：蓝量 / 链路方向 / 存放区 ----------
+## 一条管线槽已用蓝量
+func slot_mana_used(slot_idx: int) -> int:
+	if slot_idx < 0 or slot_idx >= slots.size():
+		return 0
+	var total := 0
+	for b in slots[slot_idx]:
+		total += BlockLibrary.mana_cost(String(b.id))
+	return total
+
+
+## 存放区（未装备的指令块）已用格子
+func storage_used() -> int:
+	var total := 0
+	for k in block_inventory.keys():
+		total += int(block_inventory[k])
+	return total
+
+
+func storage_free() -> int:
+	return maxi(0, BlockLibrary.STORAGE_CAP - storage_used())
+
+
+## 能否把块放进该插槽；返回 "" 表示可以，否则返回原因 key
+## 原因：slot_invalid / not_allowed / no_stock / wrong_kind / chain_gap / socket_full / mana_low
+func can_equip_socket(slot_idx: int, socket: int, block_id: String) -> String:
+	if slot_idx < 0 or slot_idx >= slots.size():
+		return "slot_invalid"
+	if not BlockLibrary.is_allowed(char_id, block_id):
+		return "not_allowed"
+	if block_stock(block_id) <= 0:
+		return "no_stock"
+	var tpl: Dictionary = CommandBlock.BLOCK_TEMPLATES.get(block_id, {})
+	if tpl.is_empty():
+		return "not_allowed"
+	var tpl_kind := String(tpl.get("kind", ""))
+
+	if socket == 0:
+		if tpl_kind != CommandBlock.KIND_ACTION:
+			return "wrong_kind"
+	elif socket >= 1 and socket <= MOD_SOCKETS:
+		if tpl_kind != CommandBlock.KIND_MODIFIER:
+			return "wrong_kind"
+		var mods := _modifier_indices(slot_idx)
+		var mi := socket - 1
+		# 链路方向：必须从左往右依次填，不能跳格
+		if mi > mods.size():
+			return "chain_gap"
+	else:
+		return "socket_full"
+
+	# 蓝量：替换时只算增量
+	var cost := BlockLibrary.mana_cost(block_id)
+	var delta := cost
+	if socket == 0:
+		var old_action := slot_action_id(slot_idx)
+		if old_action != "":
+			delta = cost - BlockLibrary.mana_cost(old_action)
+	else:
+		var mods2 := _modifier_indices(slot_idx)
+		var mi2 := socket - 1
+		if mi2 < mods2.size():
+			var old_mod: CommandBlock = slots[slot_idx][mods2[mi2]]
+			delta = cost - BlockLibrary.mana_cost(String(old_mod.id))
+	if slot_mana_used(slot_idx) + delta > BlockLibrary.MANA_MAX:
+		return "mana_low"
+
+	return ""
+
+
+## 把掉落块放进指定插槽：类型匹配 + 链路顺序 + 蓝量上限，任一不满足都会被拒
+func equip_socket(slot_idx: int, socket: int, block_id: String) -> bool:
+	var reason := can_equip_socket(slot_idx, socket, block_id)
+	if reason != "":
+		return false
+
+	if socket == 0:
+		# 替换原主动块：旧的退回库存
+		for i in range(slots[slot_idx].size() - 1, -1, -1):
+			var old: CommandBlock = slots[slot_idx][i]
+			if old.kind == CommandBlock.KIND_ACTION:
+				slots[slot_idx].remove_at(i)
+				block_inventory[old.id] = block_stock(old.id) + 1
+				break
+	else:
+		var mods := _modifier_indices(slot_idx)
+		var mi := socket - 1
+		if mi < mods.size():
+			# 该修饰槽已有块：替换，旧的退回库存
+			var at: int = mods[mi]
+			var old_mod: CommandBlock = slots[slot_idx][at]
+			slots[slot_idx].remove_at(at)
+			block_inventory[old_mod.id] = block_stock(old_mod.id) + 1
+
+	slots[slot_idx].append(CommandBlock.from_template(block_id, 1, "white"))
+	block_inventory[block_id] = block_stock(block_id) - 1
+	_apply_all_modifiers()
+	return true
+
+
+## 卸下某个插槽的块，退回库存
+func unequip_socket(slot_idx: int, socket: int) -> bool:
+	if slot_idx < 0 or slot_idx >= slots.size():
+		return false
+	if socket == 0:
+		for i in range(slots[slot_idx].size() - 1, -1, -1):
+			var b: CommandBlock = slots[slot_idx][i]
+			if b.kind == CommandBlock.KIND_ACTION:
+				slots[slot_idx].remove_at(i)
+				block_inventory[b.id] = block_stock(b.id) + 1
+				_apply_all_modifiers()
+				return true
+		return false
+	var mods := _modifier_indices(slot_idx)
+	var mi := socket - 1
+	if mi < 0 or mi >= mods.size():
+		return false
+	var at: int = mods[mi]
+	var old: CommandBlock = slots[slot_idx][at]
+	slots[slot_idx].remove_at(at)
+	block_inventory[old.id] = block_stock(old.id) + 1
+	_apply_all_modifiers()
+	return true
+
+
+func _update_block_drops(delta: float) -> void:
+	# 拾取半径略大于宝石，避免手感太苛刻
+	var pick_r := Tuning.PICKUP_RADIUS * 1.4
+	var pr2 := pick_r * pick_r
+	var i := block_drop_pos.size() - 1
+	while i >= 0:
+		var p := block_drop_pos[i]
+		if p.distance_squared_to(player_pos) <= pr2:
+			# 存放区满：捡不进来，掉落留在地上
+			if grant_block(block_drop_id[i]):
+				ProtoLogic.swap_pop(block_drop_pos, i)
+				ProtoLogic.swap_pop(block_drop_id, i)
+		i -= 1
+	if block_toast_timer > 0.0:
+		block_toast_timer -= delta
+		if block_toast_timer <= 0.0:
+			block_toast = ""
 
 
 func switch_slot(idx: int) -> bool:
@@ -347,6 +580,7 @@ func step(delta: float, input_dir: Vector2) -> void:
 	_apply_pipeline_events(pipeline_events)
 
 	_update_gems(delta)
+	_update_block_drops(delta)
 	_enemy_touch(delta)
 	_age_dmg_text(delta)
 
@@ -488,6 +722,12 @@ func _kill_enemy(idx: int) -> void:
 	if gem_pos.size() < Tuning.GEM_MAX:
 		gem_pos.append(enemy_pos[idx])
 		gem_value.append(Tuning.GEM_VALUE)
+	# 有概率掉落本角色可用的指令块（通用 + 专属），掉在敌人倒下的位置
+	if _rng.randf() < BlockLibrary.DROP_CHANCE and block_drop_pos.size() < 60:
+		var drop_id := BlockLibrary.roll_drop(char_id, _rng)
+		if drop_id != "":
+			block_drop_pos.append(enemy_pos[idx])
+			block_drop_id.append(drop_id)
 	ProtoLogic.swap_pop(enemy_pos, idx)
 	ProtoLogic.swap_pop(enemy_hp, idx)
 	ProtoLogic.swap_pop(enemy_id, idx)
@@ -623,6 +863,11 @@ func snapshot() -> Dictionary:
 		"phase": ProtoLogic.phase_name(elapsed),
 		"enemies": enemy_pos,
 		"gems": gem_pos,
+		"block_drops": block_drop_pos,
+		"block_drop_ids": block_drop_id,
+		"block_toast": block_toast,
+		"block_toast_timer": block_toast_timer,
+		"block_inventory": block_inventory,
 		"dmg_pos": dmg_pos,
 		"dmg_age": dmg_age,
 		"dmg_value": dmg_value,

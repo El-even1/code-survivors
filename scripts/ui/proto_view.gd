@@ -22,6 +22,7 @@ var upgrade_buttons: Array = []
 ## Pause & backpack & pipeline HUD
 var pause_btn: Button
 var pause_hint: Label
+var toast_label: Label
 var slot_buttons: Array = []
 var backpack
 var pipeline_hud
@@ -74,6 +75,14 @@ func _build_ui() -> void:
 	hint.add_theme_font_size_override("font_size", 15)
 	hint.add_theme_color_override("font_color", Color(0.45, 0.5, 0.6))
 	layer.add_child(hint)
+
+	# 拾取指令块提示
+	toast_label = Label.new()
+	toast_label.position = Vector2(18, 70)
+	toast_label.add_theme_font_size_override("font_size", 17)
+	toast_label.add_theme_color_override("font_color", Color(0.85, 0.7, 1.0))
+	toast_label.visible = false
+	layer.add_child(toast_label)
 
 	result_label = Label.new()
 	result_label.position = Vector2(Tuning.VIEW_W * 0.5 - 120, Tuning.VIEW_H * 0.5 - 60)
@@ -255,7 +264,22 @@ func _process(delta: float) -> void:
 
 	_update_camera(delta)
 	_update_stat()
+	_update_toast()
 	queue_redraw()
+
+
+## 拾取指令块提示（左上角）
+func _update_toast() -> void:
+	if toast_label == null:
+		return
+	if sim.block_toast != "" and sim.block_toast_timer > 0.0:
+		toast_label.visible = true
+		if sim.block_toast == "storage_full":
+			toast_label.text = I18n.ui("toast_storage_full")
+		else:
+			toast_label.text = I18n.ui("toast_block") % I18n.block_name(sim.block_toast)
+	else:
+		toast_label.visible = false
 
 
 var _last_pulses := 0
@@ -287,7 +311,7 @@ func _update_stat() -> void:
 	var slot_tag := I18n.ui("hud_slot") % (sim.get_active_slot() + 1)
 	if is_paused:
 		slot_tag += " " + I18n.ui("hud_paused")
-	stat_label.text = "%s  %s %d/%d   %s %d   %s %d/%d   %s %d   %s %d   %s %s   %.1fs" % [
+	stat_label.text = "%s  %s %d/%d   %s %d   %s %d/%d   %s %d   %s %d   %s %s   %.1fs   %s   %s" % [
 		slot_tag,
 		I18n.ui("hud_hp"), int(sim.player_hp), int(sim.player_max_hp),
 		I18n.ui("hud_lv"), sim.level,
@@ -295,7 +319,9 @@ func _update_stat() -> void:
 		I18n.ui("hud_kills"), sim.kills,
 		I18n.ui("hud_onscreen"), sim.enemy_pos.size(),
 		I18n.ui("hud_phase"), I18n.phase_name(sim.elapsed),
-		sim.elapsed
+		sim.elapsed,
+		I18n.ui("hud_mana") % [sim.slot_mana_used(sim.get_active_slot()), BlockLibrary.MANA_MAX],
+		I18n.ui("hud_storage") % [sim.storage_used(), BlockLibrary.STORAGE_CAP],
 	]
 
 
@@ -361,6 +387,24 @@ func _draw() -> void:
 			continue
 		draw_rect(Rect2(gp - Vector2(half_gem, half_gem), Vector2(Tuning.GEM_SIZE, Tuning.GEM_SIZE)),
 			gem_col, true)
+
+	# Dropped command blocks (diamond): orange = action, purple = modifier
+	for i in range(sim.block_drop_pos.size()):
+		var bp: Vector2 = sim.block_drop_pos[i]
+		if not vp.grow(pad).has_point(bp):
+			continue
+		var bid: String = sim.block_drop_id[i]
+		var tpl = CommandBlock.BLOCK_TEMPLATES.get(bid)
+		var is_action := tpl != null and String(tpl.get("kind", "")) == CommandBlock.KIND_ACTION
+		var drop_col := Color(1.0, 0.62, 0.35) if is_action else Color(0.72, 0.55, 1.0)
+		var ds := 9.0
+		var pts := PackedVector2Array([
+			bp + Vector2(0.0, -ds), bp + Vector2(ds, 0.0),
+			bp + Vector2(0.0, ds), bp + Vector2(-ds, 0.0),
+		])
+		draw_colored_polygon(pts, drop_col)
+		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]),
+			Color(1, 1, 1, 0.75), 1.2)
 
 	# Red square horde (draw viewport only, skip off-screen)
 	_raster_enemies(vp.grow(pad))

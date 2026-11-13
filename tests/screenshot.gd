@@ -49,7 +49,9 @@ func _run() -> void:
 	var suffix := "%s_%s" % [GameStateData.selected_char, GameStateData.language]
 
 	if want_backpack:
-		# 打开背包验证管线编辑 + 升级 UI；顺手加一个修饰块展示「指令链 → 数值变化」
+		# 打开背包验证工坊 UI；发两个掉落块并装一个，展示蓝量占用与修饰槽
+		inst.sim.grant_block("mod_range")
+		inst.sim.grant_block("mod_penetrate")
 		inst.toggle_backpack()
 		inst.backpack.editing_slot = 0
 		inst.backpack.add_block("mod_range")

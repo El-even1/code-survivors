@@ -1,31 +1,113 @@
 extends CanvasLayer
 
-## 背包（Backpack）：游戏内随时可打开，集中做「管线编辑 + 升级查看」
-## 打开时画面冻结；proto_view 通过 B 键 / 背包按钮开关
-## 用 sim.get_pipeline / add_command / remove_command 改管线，改完立刻刷新「当前攻击数值」让效果可见
+## 背包 · 魔法工坊式管线编辑（拖拽）
+## 约束：蓝量上限（每槽 60）、链路方向（修饰槽必须从左往右依次填）、存放区 6 格
+## 左侧：主动槽 + 3 修饰槽（拖入装备，右键卸下）；左下：掉落的指令块；右侧：升级
+## 打开时画面冻结；proto_view 用 B 键 / 背包按钮开关
+
+## 拖拽源：存放区里的指令块
+class BlockChip extends Panel:
+	var block_id := ""
+	var host
+
+	func _get_drag_data(_pos: Vector2) -> Variant:
+		if block_id == "" or host == null:
+			return null
+		var prev := Label.new()
+		prev.text = I18n.block_name(block_id)
+		prev.add_theme_font_size_override("font_size", 15)
+		set_drag_preview(prev)
+		return {"type": "chip", "block_id": block_id}
+
+
+## 工坊格子：类型 + 链路 + 蓝量校验，右键卸下
+class Socket extends Panel:
+	var socket_index := 0
+	var block_id := ""
+	var host
+	var accept_kind := "action"
+	var caption := ""
+	var label: Label
+
+	func _can_drop_data(_pos: Vector2, data: Variant) -> bool:
+		if host == null or typeof(data) != TYPE_DICTIONARY:
+			return false
+		if String(data.get("type", "")) != "chip":
+			return false
+		var bid := String(data.get("block_id", ""))
+		var tpl = CommandBlock.BLOCK_TEMPLATES.get(bid)
+		if tpl == null:
+			return false
+		return String(tpl.get("kind", "")) == accept_kind
+
+	func _drop_data(_pos: Vector2, data: Variant) -> void:
+		host.on_drop_to_socket(socket_index, String(data.get("block_id", "")))
+
+	func _get_drag_data(_pos: Vector2) -> Variant:
+		if block_id == "" or host == null:
+			return null
+		var prev := Label.new()
+		prev.text = I18n.block_name(block_id)
+		prev.add_theme_font_size_override("font_size", 15)
+		set_drag_preview(prev)
+		return {"type": "socket", "socket": socket_index}
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed:
+			if event.button_index == MOUSE_BUTTON_RIGHT and block_id != "":
+				host.on_unequip_socket(socket_index)
+
+	func set_block(bid: String) -> void:
+		block_id = bid
+		if label == null:
+			return
+		if bid == "":
+			label.text = caption
+		else:
+			label.text = I18n.ui("socket_block") % [I18n.block_name(bid), BlockLibrary.mana_cost(bid)]
+
+
+## 存放区面板：接住从格子拖回来的块
+class InventoryPanel extends Panel:
+	var host
+
+	func _can_drop_data(_pos: Vector2, data: Variant) -> bool:
+		if host == null or typeof(data) != TYPE_DICTIONARY:
+			return false
+		return String(data.get("type", "")) == "socket"
+
+	func _drop_data(_pos: Vector2, data: Variant) -> void:
+		host.on_unequip_socket(int(data.get("socket", 0)))
+
 
 var sim
 
 var editing_slot := 0
 var _open := false
+var _notice_timer := 0.0
 
 var panel: ColorRect
 var title: Label
-var pipeline_title: Label
 var slot_row: HBoxContainer
 var slot_buttons: Array = []
 var stats_label: Label
-var block_list: VBoxContainer
-var add_btn: Button
+var mana_label: Label
+var board_title: Label
+
+var board_panel: Panel
+var _sockets: Array = []
+var _socket_captions: Array = []
+var _arrows: Array = []
+
+var inv_title: Label
+var inv_panel: InventoryPanel
+var chip_grid: GridContainer
+var hint_label: Label
+var notice_label: Label
+
 var up_title: Label
 var up_list: VBoxContainer
 var close_btn: Button
-
-var template_popup: ColorRect
-var popup_title: Label
-var template_scroll: ScrollContainer
-var template_grid: GridContainer
-var popup_close: Button
 
 
 func init(sim_ref) -> void:
@@ -45,14 +127,13 @@ func is_open() -> bool:
 func open() -> void:
 	_open = true
 	_set_main_visible(true)
+	_clear_notice()
 	refresh()
 
 
 func close() -> void:
 	_open = false
 	_set_main_visible(false)
-	if template_popup != null:
-		template_popup.visible = false
 
 
 func toggle() -> void:
@@ -65,78 +146,178 @@ func toggle() -> void:
 func _set_main_visible(v: bool) -> void:
 	panel.visible = v
 	title.visible = v
-	pipeline_title.visible = v
 	slot_row.visible = v
 	stats_label.visible = v
-	block_list.visible = v
-	add_btn.visible = v
+	mana_label.visible = v
+	board_title.visible = v
+	board_panel.visible = v
+	inv_title.visible = v
+	inv_panel.visible = v
+	chip_grid.visible = v
+	hint_label.visible = v
+	notice_label.visible = v
 	up_title.visible = v
 	up_list.visible = v
 	close_btn.visible = v
+	for s in _sockets:
+		s.visible = v
+	for c in _socket_captions:
+		c.visible = v
+	for a in _arrows:
+		a.visible = v
 
 
 ## ---------- 构建 ----------
+func _panel_style(bg: Color, border: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.set_border_width_all(1)
+	sb.corner_radius_top_left = 6.0
+	sb.corner_radius_top_right = 6.0
+	sb.corner_radius_bottom_left = 6.0
+	sb.corner_radius_bottom_right = 6.0
+	return sb
+
+
 func _build() -> void:
 	panel = ColorRect.new()
-	panel.color = Color(0.045, 0.06, 0.09, 0.985)
+	panel.color = Color(0.045, 0.06, 0.09, 1.0)
 	panel.size = Vector2(Tuning.VIEW_W, Tuning.VIEW_H)
 	add_child(panel)
 
 	title = Label.new()
-	title.position = Vector2(40, 22)
+	title.position = Vector2(40, 16)
 	title.add_theme_font_size_override("font_size", 32)
 	title.add_theme_color_override("font_color", Color(1, 1, 1))
 	add_child(title)
 
-	# ---- 左栏：管线 ----
-	pipeline_title = Label.new()
-	pipeline_title.position = Vector2(40, 84)
-	pipeline_title.add_theme_font_size_override("font_size", 20)
-	pipeline_title.add_theme_color_override("font_color", Color(0.72, 0.83, 1.0))
-	add_child(pipeline_title)
-
+	# 槽位切换
 	slot_row = HBoxContainer.new()
-	slot_row.position = Vector2(40, 116)
-	slot_row.size = Vector2(400, 40)
+	slot_row.position = Vector2(40, 60)
+	slot_row.size = Vector2(400, 38)
 	slot_row.add_theme_constant_override("separation", 10)
 	add_child(slot_row)
 	for i in range(3):
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(110, 40)
+		b.custom_minimum_size = Vector2(110, 38)
 		b.add_theme_font_size_override("font_size", 16)
 		b.pressed.connect(_on_select_slot.bind(i))
 		slot_row.add_child(b)
 		slot_buttons.append(b)
 
+	# 当前攻击数值 / 蓝量 / 存放区
 	stats_label = Label.new()
-	stats_label.position = Vector2(40, 168)
+	stats_label.position = Vector2(40, 104)
 	stats_label.add_theme_font_size_override("font_size", 15)
 	stats_label.add_theme_color_override("font_color", Color(0.98, 0.85, 0.55))
 	add_child(stats_label)
 
-	block_list = VBoxContainer.new()
-	block_list.position = Vector2(40, 200)
-	block_list.size = Vector2(580, 380)
-	block_list.add_theme_constant_override("separation", 8)
-	add_child(block_list)
+	mana_label = Label.new()
+	mana_label.position = Vector2(40, 126)
+	mana_label.add_theme_font_size_override("font_size", 15)
+	mana_label.add_theme_color_override("font_color", Color(0.6, 0.78, 1.0))
+	add_child(mana_label)
 
-	add_btn = Button.new()
-	add_btn.position = Vector2(40, 592)
-	add_btn.size = Vector2(210, 44)
-	add_btn.add_theme_font_size_override("font_size", 17)
-	add_btn.pressed.connect(_open_templates)
-	add_child(add_btn)
+	# 工坊板
+	board_title = Label.new()
+	board_title.position = Vector2(40, 152)
+	board_title.add_theme_font_size_override("font_size", 16)
+	board_title.add_theme_color_override("font_color", Color(0.72, 0.83, 1.0))
+	add_child(board_title)
 
-	# ---- 右栏：升级 ----
+	board_panel = Panel.new()
+	board_panel.position = Vector2(40, 178)
+	board_panel.size = Vector2(600, 214)
+	board_panel.add_theme_stylebox_override("panel",
+		_panel_style(Color(0.07, 0.09, 0.13), Color(0.24, 0.3, 0.42)))
+	add_child(board_panel)
+
+	var xs := [60.0, 200.0, 340.0, 480.0]
+	for i in range(4):
+		var cap := Label.new()
+		cap.position = Vector2(xs[i], 186)
+		cap.add_theme_font_size_override("font_size", 13)
+		cap.add_theme_color_override("font_color", Color(0.55, 0.63, 0.78))
+		add_child(cap)
+		_socket_captions.append(cap)
+
+		var sock := Socket.new()
+		sock.socket_index = i
+		sock.accept_kind = CommandBlock.KIND_ACTION if i == 0 else CommandBlock.KIND_MODIFIER
+		sock.host = self
+		sock.position = Vector2(xs[i], 206)
+		sock.size = Vector2(120, 112)
+		sock.add_theme_stylebox_override("panel",
+			_panel_style(Color(0.11, 0.14, 0.2), Color(0.35, 0.42, 0.58)))
+		var lbl := Label.new()
+		lbl.position = Vector2(8, 8)
+		lbl.size = Vector2(104, 96)
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lbl.add_theme_font_size_override("font_size", 15)
+		lbl.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0))
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sock.add_child(lbl)
+		sock.label = lbl
+		add_child(sock)
+		_sockets.append(sock)
+
+	# 链路方向箭头（槽与槽之间）
+	for i in range(3):
+		var arrow := Label.new()
+		arrow.text = "→"
+		arrow.position = Vector2(xs[i] + 124.0, 244)
+		arrow.add_theme_font_size_override("font_size", 22)
+		arrow.add_theme_color_override("font_color", Color(0.95, 0.78, 0.4))
+		add_child(arrow)
+		_arrows.append(arrow)
+
+	# 存放区
+	inv_title = Label.new()
+	inv_title.position = Vector2(40, 402)
+	inv_title.add_theme_font_size_override("font_size", 18)
+	inv_title.add_theme_color_override("font_color", Color(0.72, 0.83, 1.0))
+	add_child(inv_title)
+
+	inv_panel = InventoryPanel.new()
+	inv_panel.host = self
+	inv_panel.position = Vector2(40, 432)
+	inv_panel.size = Vector2(600, 160)
+	inv_panel.add_theme_stylebox_override("panel",
+		_panel_style(Color(0.07, 0.09, 0.13), Color(0.24, 0.3, 0.42)))
+	add_child(inv_panel)
+
+	chip_grid = GridContainer.new()
+	chip_grid.position = Vector2(16, 14)
+	chip_grid.size = Vector2(568, 132)
+	chip_grid.columns = 4
+	chip_grid.add_theme_constant_override("hseparation", 8)
+	chip_grid.add_theme_constant_override("vseparation", 8)
+	inv_panel.add_child(chip_grid)
+
+	hint_label = Label.new()
+	hint_label.position = Vector2(40, 600)
+	hint_label.add_theme_font_size_override("font_size", 13)
+	hint_label.add_theme_color_override("font_color", Color(0.5, 0.58, 0.72))
+	add_child(hint_label)
+
+	notice_label = Label.new()
+	notice_label.position = Vector2(40, 622)
+	notice_label.add_theme_font_size_override("font_size", 16)
+	notice_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
+	notice_label.visible = false
+	add_child(notice_label)
+
+	# 升级
 	up_title = Label.new()
-	up_title.position = Vector2(680, 84)
-	up_title.add_theme_font_size_override("font_size", 20)
+	up_title.position = Vector2(680, 104)
+	up_title.add_theme_font_size_override("font_size", 18)
 	up_title.add_theme_color_override("font_color", Color(0.72, 0.83, 1.0))
 	add_child(up_title)
 
 	up_list = VBoxContainer.new()
-	up_list.position = Vector2(680, 116)
-	up_list.size = Vector2(560, 480)
+	up_list.position = Vector2(680, 136)
+	up_list.size = Vector2(560, 450)
 	up_list.add_theme_constant_override("separation", 8)
 	add_child(up_list)
 
@@ -147,136 +328,90 @@ func _build() -> void:
 	close_btn.pressed.connect(close)
 	add_child(close_btn)
 
-	_build_template_popup()
-
-
-func _build_template_popup() -> void:
-	template_popup = ColorRect.new()
-	template_popup.color = Color(0, 0, 0, 0.75)
-	template_popup.size = Vector2(Tuning.VIEW_W, Tuning.VIEW_H)
-	template_popup.visible = false
-	add_child(template_popup)
-
-	popup_title = Label.new()
-	popup_title.position = Vector2(Tuning.VIEW_W * 0.5 - 220.0, 96)
-	popup_title.add_theme_font_size_override("font_size", 28)
-	popup_title.add_theme_color_override("font_color", Color(1, 1, 1))
-	template_popup.add_child(popup_title)
-
-	template_scroll = ScrollContainer.new()
-	template_scroll.position = Vector2(Tuning.VIEW_W * 0.5 - 300.0, 150)
-	template_scroll.size = Vector2(600, 430)
-	template_popup.add_child(template_scroll)
-
-	template_grid = GridContainer.new()
-	template_grid.columns = 1
-	template_grid.add_theme_constant_override("hseparation", 8)
-	template_grid.add_theme_constant_override("vseparation", 8)
-	template_scroll.add_child(template_grid)
-
-	popup_close = Button.new()
-	popup_close.position = Vector2(Tuning.VIEW_W * 0.5 - 100.0, Tuning.VIEW_H - 90)
-	popup_close.size = Vector2(200, 50)
-	popup_close.add_theme_font_size_override("font_size", 18)
-	popup_close.pressed.connect(_close_templates)
-	template_popup.add_child(popup_close)
-
 
 ## ---------- 刷新 ----------
 func refresh() -> void:
 	if not _open:
 		return
 	title.text = I18n.ui("backpack_title")
-	pipeline_title.text = I18n.ui("backpack_pipeline")
+	board_title.text = I18n.ui("backpack_workshop")
+	inv_title.text = I18n.ui("backpack_inventory_title")
+	hint_label.text = I18n.ui("backpack_drag_hint")
 	up_title.text = I18n.ui("backpack_upgrades")
-	add_btn.text = I18n.ui("editor_add")
 	close_btn.text = I18n.ui("backpack_close")
-	popup_title.text = I18n.ui("editor_popup_title")
-	popup_close.text = I18n.ui("editor_popup_close")
 	for i in range(slot_buttons.size()):
 		var b: Button = slot_buttons[i]
 		b.text = I18n.ui("hud_slot") % (i + 1)
 		b.disabled = (i == editing_slot)
-	_refresh_stats()
-	_refresh_blocks()
-	_refresh_upgrades()
 
-
-## 当前攻击数值：让玩家直接看到管线改动带来的变化
-func _refresh_stats() -> void:
 	stats_label.text = I18n.ui("backpack_stats") % [
 		int(sim.attack_damage),
 		int(sim.attack_radius),
 		sim.attack_cooldown,
 		sim.attack_pierce,
 	]
+	mana_label.text = I18n.ui("backpack_mana") % [
+		sim.slot_mana_used(editing_slot),
+		BlockLibrary.MANA_MAX,
+		sim.storage_used(),
+		BlockLibrary.STORAGE_CAP,
+	]
+
+	var action_id: String = sim.slot_action_id(editing_slot)
+	var mods: Array = sim.slot_modifier_ids(editing_slot)
+	for s in _sockets:
+		if s.socket_index == 0:
+			s.set_block(action_id)
+		else:
+			var mi: int = s.socket_index - 1
+			if mi < mods.size():
+				s.set_block(String(mods[mi]))
+			else:
+				s.set_block("")
+	for i in range(_socket_captions.size()):
+		var cap: Label = _socket_captions[i]
+		cap.text = I18n.ui("socket_action") if i == 0 else "%s %d" % [I18n.ui("socket_modifier"), i]
+
+	_refresh_inventory()
+	_refresh_upgrades()
 
 
-func _refresh_blocks() -> void:
-	for child in block_list.get_children():
+func _refresh_inventory() -> void:
+	for child in chip_grid.get_children():
 		child.queue_free()
 
-	var pipeline: Array = sim.get_pipeline(editing_slot)
-	if pipeline == null:
-		return
-	if pipeline.is_empty():
+	if sim.storage_used() == 0:
 		var empty := Label.new()
-		empty.text = I18n.ui("editor_empty")
-		empty.add_theme_font_size_override("font_size", 16)
+		empty.text = I18n.ui("backpack_no_blocks")
+		empty.add_theme_font_size_override("font_size", 15)
 		empty.add_theme_color_override("font_color", Color(0.55, 0.62, 0.75))
-		block_list.add_child(empty)
+		chip_grid.add_child(empty)
 		return
 
-	for i in range(pipeline.size()):
-		var block: CommandBlock = pipeline[i]
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 12)
-
-		var name_lbl := Label.new()
-		name_lbl.text = "%s (Lv%d)" % [I18n.block_name(block.id), block.level]
-		name_lbl.custom_minimum_size = Vector2(260, 36)
-		name_lbl.add_theme_font_size_override("font_size", 18)
-		name_lbl.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0))
-		row.add_child(name_lbl)
-
-		var kind_lbl := Label.new()
-		kind_lbl.text = I18n.kind_label(block.kind)
-		kind_lbl.custom_minimum_size = Vector2(110, 36)
-		kind_lbl.add_theme_font_size_override("font_size", 16)
-		kind_lbl.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
-		row.add_child(kind_lbl)
-
-		var tag_lbl := Label.new()
-		tag_lbl.text = I18n.tag_label(block.tag)
-		tag_lbl.custom_minimum_size = Vector2(80, 36)
-		tag_lbl.add_theme_font_size_override("font_size", 15)
-		tag_lbl.add_theme_color_override("font_color", Color(0.8, 0.9, 0.7))
-		row.add_child(tag_lbl)
-
-		# 这块是干什么的：直接写在行尾，避免玩家看不懂管线作用
-		var desc_lbl := Label.new()
-		desc_lbl.text = I18n.block_desc(block.id)
-		desc_lbl.custom_minimum_size = Vector2(230, 36)
-		desc_lbl.add_theme_font_size_override("font_size", 14)
-		desc_lbl.add_theme_color_override("font_color", Color(0.6, 0.66, 0.78))
-		row.add_child(desc_lbl)
-
-		var del_btn := Button.new()
-		del_btn.text = "×"
-		del_btn.custom_minimum_size = Vector2(44, 36)
-		del_btn.add_theme_font_size_override("font_size", 18)
-		del_btn.pressed.connect(_on_remove_block.bind(i))
-		row.add_child(del_btn)
-
-		block_list.add_child(row)
-
-		# 指令链之间画一个向下箭头，读成「依次生效」
-		if i < pipeline.size() - 1:
-			var arrow := Label.new()
-			arrow.text = "↓"
-			arrow.add_theme_font_size_override("font_size", 16)
-			arrow.add_theme_color_override("font_color", Color(0.45, 0.52, 0.65))
-			block_list.add_child(arrow)
+	var ids: Array = sim.block_inventory.keys()
+	ids.sort()
+	for raw_id in ids:
+		var bid := String(raw_id)
+		var count: int = sim.block_stock(bid)
+		if count <= 0:
+			continue
+		var chip := BlockChip.new()
+		chip.block_id = bid
+		chip.host = self
+		chip.custom_minimum_size = Vector2(134, 44)
+		chip.add_theme_stylebox_override("panel",
+			_panel_style(Color(0.15, 0.19, 0.27), Color(0.4, 0.5, 0.68)))
+		var lbl := Label.new()
+		lbl.text = "%s ×%d\n%s" % [
+			I18n.block_name(bid), count,
+			I18n.ui("chip_mana") % BlockLibrary.mana_cost(bid),
+		]
+		lbl.position = Vector2(8, 4)
+		lbl.add_theme_font_size_override("font_size", 13)
+		lbl.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0))
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.add_child(lbl)
+		chip_grid.add_child(chip)
 
 
 func _refresh_upgrades() -> void:
@@ -314,59 +449,63 @@ func _refresh_upgrades() -> void:
 		up_list.add_child(row)
 
 
-## ---------- 操作 ----------
+## ---------- 拖拽 / 操作回调 ----------
+func on_drop_to_socket(socket_index: int, block_id: String) -> void:
+	var reason: String = sim.can_equip_socket(editing_slot, socket_index, block_id)
+	if reason != "":
+		_show_reason(reason)
+		return
+	sim.equip_socket(editing_slot, socket_index, block_id)
+	_clear_notice()
+	refresh()
+
+
+func on_unequip_socket(socket_index: int) -> void:
+	sim.unequip_socket(editing_slot, socket_index)
+	_clear_notice()
+	refresh()
+
+
 func _on_select_slot(slot: int) -> void:
 	editing_slot = slot
+	_clear_notice()
 	refresh()
 
 
-func _on_remove_block(idx: int) -> void:
-	sim.remove_command(editing_slot, idx)
+func _show_reason(reason_key: String) -> void:
+	if notice_label == null:
+		return
+	notice_label.text = I18n.ui("reason_" + reason_key)
+	notice_label.visible = true
+	_notice_timer = 2.5
+
+
+func _clear_notice() -> void:
+	_notice_timer = 0.0
+	if notice_label != null:
+		notice_label.visible = false
+
+
+func _process(delta: float) -> void:
+	if _notice_timer > 0.0:
+		_notice_timer -= delta
+		if _notice_timer <= 0.0 and notice_label != null:
+			notice_label.visible = false
+
+
+## 自动放进合适的空槽（测试用）：主动块→主动槽，修饰块→下一个修饰槽
+func add_block(block_id: String) -> bool:
+	var tpl = CommandBlock.BLOCK_TEMPLATES.get(block_id)
+	if tpl == null:
+		return false
+	var socket := 0
+	if String(tpl.get("kind", "")) != CommandBlock.KIND_ACTION:
+		socket = sim.slot_modifier_ids(editing_slot).size() + 1
+	var reason: String = sim.can_equip_socket(editing_slot, socket, block_id)
+	if reason != "":
+		_show_reason(reason)
+		return false
+	var ok: bool = sim.equip_socket(editing_slot, socket, block_id)
+	_clear_notice()
 	refresh()
-
-
-## 加指令块（公开给模板弹窗与测试用）
-func add_block(block_id: String) -> void:
-	var block := CommandBlock.from_template(block_id, 1, "white")
-	sim.add_command(editing_slot, block)
-	refresh()
-
-
-func _open_templates() -> void:
-	for child in template_grid.get_children():
-		child.queue_free()
-
-	var templates: Dictionary = CommandBlock.BLOCK_TEMPLATES
-	var keys: Array = templates.keys()
-	keys.sort()
-
-	for key in keys:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-
-		var name_lbl := Label.new()
-		name_lbl.text = I18n.block_name(String(key))
-		name_lbl.custom_minimum_size = Vector2(360, 38)
-		name_lbl.add_theme_font_size_override("font_size", 18)
-		name_lbl.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0))
-		row.add_child(name_lbl)
-
-		var add_tpl := Button.new()
-		add_tpl.text = I18n.ui("editor_add_btn")
-		add_tpl.custom_minimum_size = Vector2(110, 38)
-		add_tpl.add_theme_font_size_override("font_size", 15)
-		add_tpl.pressed.connect(_on_add_template.bind(String(key)))
-		row.add_child(add_tpl)
-
-		template_grid.add_child(row)
-
-	template_popup.visible = true
-
-
-func _on_add_template(block_id: String) -> void:
-	add_block(block_id)
-	_close_templates()
-
-
-func _close_templates() -> void:
-	template_popup.visible = false
+	return ok

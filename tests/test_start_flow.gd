@@ -116,13 +116,16 @@ func _run() -> void:
 	battle2.toggle_backpack()
 	check(battle2.backpack.is_open() == true, "B 打开背包")
 	battle2.backpack.editing_slot = 0
-	var blocks_before: int = battle2.sim.get_pipeline(0).size()
-	var radius_before: float = battle2.sim.attack_radius
-	battle2.backpack.add_block("mod_range")
-	check(battle2.sim.get_pipeline(0).size() == blocks_before + 1, "背包里添加指令块进入管线")
-	check(battle2.sim.attack_radius > radius_before, "加修饰块后攻击数值立刻变化（效果可见）")
-	battle2.backpack._on_remove_block(blocks_before)
-	check(battle2.sim.get_pipeline(0).size() == blocks_before, "背包里删除指令块生效")
+	check(battle2.backpack.add_block("mod_range") == false, "没有掉落不能装备指令块")
+	battle2.sim.grant_block("mod_range")
+	check(battle2.backpack.add_block("mod_range") == false, "角色专属块不能跨角色装备")
+	battle2.sim.grant_block("mod_penetrate")
+	var mods_before: int = battle2.sim.slot_modifier_ids(0).size()
+	check(battle2.backpack.add_block("mod_penetrate") == true, "拾取后可以装备通用块")
+	check(battle2.sim.slot_modifier_ids(0).size() == mods_before + 1, "修饰槽多了一个块")
+	check(battle2.sim.attack_pierce >= 2, "装备穿透块后攻击数值变化（效果可见）")
+	battle2.backpack.on_unequip_socket(mods_before + 1)
+	check(battle2.sim.slot_modifier_ids(0).size() == mods_before, "卸下后修饰槽恢复")
 	battle2.toggle_backpack()
 	check(battle2.backpack.is_open() == false, "再按 B 关闭背包")
 
