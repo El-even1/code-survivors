@@ -44,13 +44,16 @@ func _ready() -> void:
 		add_child(pipeline_editor)
 
 	# Right-bottom mini pipeline line (battle real-time flash, let player see pipeline running)
+	# 必须放进 CanvasLayer：否则 Control 挂在 Node2D 下会跟着摄像机漂到玩家旁边
 	var hud_script = load("res://scripts/ui/pipeline_hud.gd")
 	if hud_script != null:
+		var hud_layer := CanvasLayer.new()
+		add_child(hud_layer)
 		pipeline_hud = hud_script.new()
 		pipeline_hud.init(sim)
 		pipeline_hud.size = Vector2(Tuning.VIEW_W, Tuning.VIEW_H)
 		pipeline_hud.position = Vector2.ZERO
-		add_child(pipeline_hud)
+		hud_layer.add_child(pipeline_hud)
 
 
 ## Initialize: build UI, build pipeline editor

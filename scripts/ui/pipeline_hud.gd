@@ -20,6 +20,7 @@ const COL_FLASH := Color(1, 1, 1)
 
 var _node_labels: Array = []      # per-node label
 var _arrow_labels: Array = []     # per-node arrow label
+var _title_label: Label           # 说明这排卡片是什么：当前生效的管线
 
 func init(sim_ref: ProtoSim) -> void:
 	sim = sim_ref
@@ -27,6 +28,12 @@ func init(sim_ref: ProtoSim) -> void:
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 右下角卡片旁的说明文字，避免玩家不知道这是什么
+	_title_label = Label.new()
+	_title_label.add_theme_font_size_override("font_size", 13)
+	_title_label.add_theme_color_override("font_color", Color(0.55, 0.62, 0.78))
+	_title_label.visible = false
+	add_child(_title_label)
 
 
 func _process(_delta: float) -> void:
@@ -75,6 +82,14 @@ func _rebuild() -> void:
 	var x0 := size.x - total_w - PAD
 	var y0 := size.y - NODE_H - PAD
 
+	# 左侧说明：这排卡片 = 当前生效的管线（Esc 可编辑）
+	_title_label.text = I18n.ui("hud_pipeline")
+	_title_label.visible = n > 0
+	if n > 0:
+		var font := ThemeDB.fallback_font
+		var tw: float = font.get_string_size(_title_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+		_title_label.position = Vector2(x0 - tw - 10.0, y0 + (NODE_H - 16.0) * 0.5)
+
 	for i in range(n):
 		var block = blocks[i]
 		var lbl: Label = _node_labels[i]
@@ -118,6 +133,8 @@ func _rebuild() -> void:
 
 
 func _clear_all() -> void:
+	if _title_label != null:
+		_title_label.visible = false
 	for lbl in _node_labels:
 		lbl.queue_free()
 	_node_labels.clear()
