@@ -134,8 +134,7 @@ func _on_upgrade_picked(slot: int) -> void:
 	sim.apply_upgrade(id)
 	upgrade_panel.visible = false
 	_current_options = []
-	if sim.pending_levels > 0:
-		_open_upgrade()
+	# 剩余 pending_levels 由 _process 下一帧处理，避免连续弹面板
 
 
 ## Toggle pause

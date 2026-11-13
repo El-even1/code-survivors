@@ -232,6 +232,7 @@ func apply_upgrade(id: String) -> void:
 		_:
 			pass
 	_apply_all_modifiers()
+	pending_levels = maxi(0, pending_levels - 1)
 
 
 func add_command(slot_idx: int, block: CommandBlock) -> bool:
