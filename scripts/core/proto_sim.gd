@@ -331,9 +331,14 @@ func step(delta: float, input_dir: Vector2) -> void:
 
 	attack_timer -= delta
 	if attack_timer <= 0.0:
-		attack_timer = attack_cooldown
-		attack_flash = 0.15
-		_fire_attack()
+		# 攻击范围内没有目标就保持待发（不消耗冷却、不播攻击特效），
+		# 目标一进圈立刻开火
+		if _has_target_in_range():
+			attack_timer = attack_cooldown
+			attack_flash = 0.15
+			_fire_attack()
+		else:
+			attack_timer = 0.0
 	if attack_flash > 0.0:
 		attack_flash -= delta
 
@@ -420,9 +425,21 @@ func _clamp_player() -> void:
 	player_pos.y = clampf(player_pos.y, m, Tuning.WORLD_H - m)
 
 
+## 攻击范围内是否有目标（Boss 战中 Boss 就是目标）
+func _has_target_in_range() -> bool:
+	if current_boss != "":
+		return true
+	var r2 := attack_radius * attack_radius
+	for p in enemy_pos:
+		if p.distance_squared_to(player_pos) <= r2:
+			return true
+	return false
+
+
 func _fire_attack() -> void:
 	# If boss fight, attack boss instead of enemies
 	if current_boss != "":
+		aoe_pulses += 1
 		boss_hp -= attack_damage
 		damage_dealt += attack_damage
 		_push_dmg_text(player_pos, attack_damage)
@@ -442,6 +459,7 @@ func _fire_attack() -> void:
 	if nearest_idx < 0:
 		return
 
+	aoe_pulses += 1
 	var m := attack_multi
 	for k in range(m):
 		var damage := attack_damage

@@ -33,6 +33,7 @@ func _init() -> void:
 	test_300_enemy_perf()
 	test_select_char_changes_stats()
 	test_auto_attack_hits_nearest()
+	test_attack_only_when_in_range()
 	test_modifier_changes_attack()
 	test_pipeline_empty()
 	test_pipeline_modifier_chain()
@@ -243,6 +244,39 @@ func test_auto_attack_hits_nearest() -> void:
 	sim.step(0.016, Vector2.ZERO)
 	check(sim.enemy_hp[0] < 100.0, "最近敌人受到伤害")
 	check(sim.enemy_hp[1] >= 100.0, "远处敌人未受伤")
+
+
+## 攻击只在范围内有敌人时触发：空挥不消耗冷却、不播特效
+func test_attack_only_when_in_range() -> void:
+	var sim := ProtoSim.new()
+	sim._select_char("mage")
+	var r: float = sim.attack_radius
+
+	# 1) 范围内没有任何敌人：30 帧都不该攻击
+	for i in range(30):
+		sim.step(0.016, Vector2.ZERO)
+	check(sim.aoe_pulses == 0, "范围内无敌人时不触发攻击")
+	check(sim.attack_flash <= 0.0, "范围内无敌人时不播攻击特效")
+	check(absf(sim.attack_timer) < 0.001, "范围内无敌人时冷却保持待发")
+
+	# 2) 敌人在范围外：仍然不攻击
+	sim.enemy_pos.clear()
+	sim.enemy_hp.clear()
+	sim.enemy_id.clear()
+	sim.enemy_pos.append(sim.player_pos + Vector2(r * 1.8, 0.0))
+	sim.enemy_hp.append(1000.0)
+	sim.enemy_id.append(0)
+	var pulses_before: int = sim.aoe_pulses
+	for i in range(10):
+		sim.step(0.016, Vector2.ZERO)
+	check(sim.aoe_pulses == pulses_before, "敌人在范围外时不攻击")
+
+	# 3) 敌人进圈：立刻开火（不用等冷却）
+	sim.enemy_pos[0] = sim.player_pos + Vector2(r * 0.5, 0.0)
+	sim.step(0.016, Vector2.ZERO)
+	check(sim.aoe_pulses > pulses_before, "敌人进圈后立刻攻击")
+	check(sim.enemy_hp[0] < 1000.0, "进圈敌人受到伤害")
+	check(sim.attack_flash > 0.0, "攻击时播放武器特效")
 
 
 func test_modifier_changes_attack() -> void:
