@@ -36,7 +36,7 @@ func _init() -> void:
 	test_attack_only_when_in_range()
 	test_warrior_cleave_hits_area()
 	test_block_library_and_sockets()
-	test_casting_consumes_mana()
+	test_mana_basic_free_skill_costs()
 	test_projectile_and_track()
 	test_boss_and_safe_zone()
 	test_modifier_changes_attack()
@@ -405,37 +405,57 @@ func test_block_library_and_sockets() -> void:
 
 
 ## 蓝量是施法资源：施法扣蓝、蓝不够不施法、随时间回复
-func test_casting_consumes_mana() -> void:
+func test_mana_basic_free_skill_costs() -> void:
+	# 1) 普攻免费：蓝量不满也照样打，且不扣蓝
 	var sim := ProtoSim.new()
 	sim._select_char("mage")
 	sim.enemy_pos.append(sim.player_pos + Vector2(20.0, 0.0))
 	sim.enemy_hp.append(500.0)
 	sim.enemy_id.append(0)
+	sim.mana = 40.0
 	sim.attack_timer = 0.0
-
 	var mana0: float = sim.mana
-	var cost: int = sim.cast_mana_cost(0)
-	check(cost > 0, "管线有施法耗蓝")
 	sim.step(0.016, Vector2.ZERO)
-	check(sim.mana < mana0, "施法消耗蓝量")
-	var expect: float = mana0 + sim.mana_regen * 0.016 - float(cost)
-	check(absf(sim.mana - expect) < 0.5, "扣蓝量等于管线耗蓝（含当帧回复）")
+	check(sim.mana >= mana0, "普攻不消耗蓝量")
+	check(sim.shot_pos.size() > 0, "蓝量不满也能普攻（子弹已发射）")
 
-	# 蓝不够：不施法（先清掉还在飞的子弹）
+	# 2) 0 蓝照样普攻
 	sim.clear_shots()
 	sim.mana = 0.0
 	sim.attack_timer = 0.0
 	var hp_before: float = sim.enemy_hp[0]
-	sim.step(0.016, Vector2.ZERO)
-	check(sim.enemy_hp[0] >= hp_before, "蓝量不足时不施法")
+	for i in range(10):
+		sim.step(0.016, Vector2.ZERO)
+	check(sim.enemy_hp[0] < hp_before, "0 蓝也能用普攻打出伤害")
 
-	# 无目标时也能回蓝
-	sim.enemy_pos.clear()
-	sim.enemy_hp.clear()
-	sim.enemy_id.clear()
-	sim.mana = 0.0
-	sim.step(1.0, Vector2.ZERO)
-	check(sim.mana > 0.0, "蓝量随时间自动回复")
+	# 3) 技能耗蓝：空格技能消耗蓝量并进入冷却
+	var sk := ProtoSim.new()
+	sk._select_char("mage")
+	sk.enemy_pos.append(sk.player_pos + Vector2(30.0, 0.0))
+	sk.enemy_hp.append(5000.0)
+	sk.enemy_id.append(0)
+	sk.mana = sk.mana_max
+	var cost: int = sk.skill_mana_cost()
+	check(cost > 0, "技能有蓝耗")
+	check(sk.cast_skill(), "蓝够时技能可以释放")
+	check(sk.mana < sk.mana_max, "技能消耗蓝量")
+	check(absf(sk.mana - (sk.mana_max - float(cost))) < 0.01, "扣蓝量等于技能耗蓝")
+	check(sk.skill_cd > 0.0, "技能进入冷却")
+	check(sk.cast_skill() == false, "冷却中不能再放技能")
+
+	# 4) 蓝不足放不出技能
+	sk.skill_cd = 0.0
+	sk.mana = 0.0
+	check(sk.cast_skill() == false, "蓝不足时技能放不出")
+
+	# 5) 蓝量随时间自动回复
+	sk.enemy_pos.clear()
+	sk.enemy_hp.clear()
+	sk.enemy_id.clear()
+	sk.mana = 0.0
+	for i in range(10):
+		sk.step(0.1, Vector2.ZERO)
+	check(sk.mana > 0.0, "蓝量随时间自动回复")
 
 
 ## Boss 战 + 安全区：进 Boss 清场、打 Boss 掉血、击杀后进安全区回血、点继续离开

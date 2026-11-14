@@ -37,6 +37,7 @@ var camera_pos := Vector2.ZERO
 var stat_label: Label
 var hp_bar: StatBar
 var mana_bar: StatBar
+var skill_label: Label
 var boss_bar: StatBar
 var safe_panel: ColorRect
 var safe_title: Label
@@ -108,6 +109,13 @@ func _build_ui() -> void:
 	mana_bar.size = Vector2(300, 18)
 	mana_bar.fill_col = Color(0.35, 0.6, 1.0)
 	layer.add_child(mana_bar)
+
+	# 技能提示（普攻免费，技能耗蓝）
+	skill_label = Label.new()
+	skill_label.position = Vector2(18, Tuning.VIEW_H - 112)
+	skill_label.add_theme_font_size_override("font_size", 15)
+	skill_label.add_theme_color_override("font_color", Color(0.95, 0.85, 0.45))
+	layer.add_child(skill_label)
 
 	# Boss 血条（居中，仅 Boss 战显示）
 	boss_bar = StatBar.new()
@@ -299,6 +307,12 @@ func _input(event: InputEvent) -> void:
 			if sim.alive and not upgrade_panel.visible:
 				toggle_backpack()
 				get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_SPACE:
+			# 技能（耗蓝）；普攻是自动的，不耗蓝
+			var busy: bool = is_paused or upgrade_panel.visible or (backpack != null and backpack.is_open())
+			if sim.alive and not busy:
+				sim.cast_skill()
+				get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
 			# 安全区：Enter 继续下一阶段
 			if sim.is_safe_zone() and sim.alive:
@@ -430,6 +444,18 @@ func _update_stat() -> void:
 	mana_bar.ratio = mana_ratio
 	mana_bar.text = I18n.ui("bar_mana") % [int(sim.mana), int(sim.mana_max)]
 	mana_bar.queue_redraw()
+
+	# 技能提示：冷却中显示 CD，否则显示耗蓝与是否够蓝
+	if skill_label != null:
+		var skill_cost: int = sim.skill_mana_cost()
+		if sim.skill_cd > 0.0:
+			skill_label.text = I18n.ui("hud_skill_cd") % sim.skill_cd
+			skill_label.add_theme_color_override("font_color", Color(0.6, 0.66, 0.78))
+		else:
+			skill_label.text = I18n.ui("hud_skill") % skill_cost
+			var ready_to_cast: bool = sim.mana >= float(skill_cost)
+			skill_label.add_theme_color_override("font_color",
+				Color(0.95, 0.85, 0.45) if ready_to_cast else Color(0.7, 0.55, 0.55))
 
 	# Boss 血条
 	var boss_on: bool = sim.is_boss_fight()

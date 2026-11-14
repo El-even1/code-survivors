@@ -45,10 +45,14 @@ var player_speed := Tuning.PLAYER_SPEED
 var alive := true
 var iframe_timer := 0.0
 
-## ---------- 蓝量（每次施法消耗，持续回复）----------
+## ---------- 蓝量（技能消耗，普攻不耗蓝；持续回复）----------
 var mana := 100.0
 var mana_max := 100.0
 var mana_regen := 8.0
+
+## ---------- 主动技能（空格，耗蓝）----------
+var skill_cd := 0.0
+var skill_cooldown := 3.0
 
 ## ---------- Attack System ----------
 var attack_cooldown := 0.60
@@ -71,6 +75,7 @@ var shot_dir: Array[Vector2] = []
 var shot_life: Array[float] = []
 var shot_pierce: Array[int] = []
 var shot_hits: Array[int] = []
+var shot_damage: Array[float] = []
 var shot_hit_ids: Array = []         # 每颗子弹已命中的 enemy_id（防止同一颗重复命中）
 var shot_speed := 560.0
 var shot_radius := 7.0
@@ -629,12 +634,10 @@ func step(delta: float, input_dir: Vector2) -> void:
 	# 蓝量持续回复
 	mana = minf(mana_max, mana + mana_regen * delta)
 
+	# 普攻：免费，只看范围内有没有目标
 	attack_timer -= delta
 	if attack_timer <= 0.0:
-		# 攻击范围内有目标、且蓝够施法才开火；否则保持待发（进圈/回蓝后立刻打）
-		var cast_cost := cast_mana_cost(active_slot)
-		if _has_target_in_range() and mana >= float(cast_cost):
-			mana -= float(cast_cost)
+		if _has_target_in_range():
 			attack_timer = attack_cooldown
 			attack_flash = 0.15
 			_fire_attack()
@@ -642,6 +645,10 @@ func step(delta: float, input_dir: Vector2) -> void:
 			attack_timer = 0.0
 	if attack_flash > 0.0:
 		attack_flash -= delta
+
+	# 技能冷却
+	if skill_cd > 0.0:
+		skill_cd -= delta
 
 	# 弹道推进（子弹飞行 / 追踪 / 穿透命中）
 	_update_shots(delta)
@@ -986,8 +993,79 @@ func _fire_projectiles() -> void:
 		shot_life.append(flight_life)
 		shot_pierce.append(pierce_n)
 		shot_hits.append(0)
+		shot_damage.append(attack_damage)
 		shot_hit_ids.append([])
 
+
+## ---------- 主动技能（空格）：耗蓝；普攻不耗蓝 ----------
+func skill_mana_cost() -> int:
+	return maxi(10, cast_mana_cost(active_slot) * 2)
+
+
+func cast_skill() -> bool:
+	if not alive or level_sim.is_victory or is_safe_zone():
+		return false
+	if skill_cd > 0.0:
+		return false
+	var cost := skill_mana_cost()
+	if mana < float(cost):
+		return false
+	mana -= float(cost)
+	skill_cd = skill_cooldown
+	attack_flash = 0.2
+
+	if current_boss != "":
+		aoe_pulses += 1
+		var dmg_b: float = attack_damage * 2.0
+		level_sim.set_boss_hp(level_sim.boss_hp - dmg_b)
+		boss_hp = level_sim.boss_hp
+		damage_dealt += dmg_b
+		_push_dmg_text(boss_pos, dmg_b)
+		return true
+
+	if char_id == "warrior":
+		_skill_nova()
+	else:
+		_skill_ring()
+	return true
+
+
+## 战士技能：更大范围的重击横扫
+func _skill_nova() -> void:
+	var eff_r := effective_attack_radius() * 1.5
+	var r2 := eff_r * eff_r
+	var dmg := attack_damage * 1.5
+	var to_kill: Array[int] = []
+	aoe_pulses += 1
+	for i in range(enemy_pos.size()):
+		if enemy_hp[i] <= 0.0:
+			continue
+		if enemy_pos[i].distance_squared_to(player_pos) <= r2:
+			_damage_enemy(i, dmg)
+			if enemy_hp[i] <= 0.0:
+				to_kill.append(i)
+	_flush_kills(to_kill)
+
+
+## 远程技能：向四周发射一圈高伤穿透子弹
+func _skill_ring() -> void:
+	var eff_r := effective_attack_radius()
+	var n := 10
+	var dmg := attack_damage * 1.2
+	var life: float = eff_r * 1.4 / shot_speed
+	var pierce_n := maxi(1, attack_pierce)
+	aoe_pulses += 1
+	for k in range(n):
+		if shot_pos.size() >= SHOT_MAX * 2:
+			break
+		var a: float = TAU * float(k) / float(n)
+		shot_pos.append(player_pos)
+		shot_dir.append(Vector2(cos(a), sin(a)))
+		shot_life.append(life)
+		shot_pierce.append(pierce_n)
+		shot_hits.append(0)
+		shot_damage.append(dmg)
+		shot_hit_ids.append([])
 
 ## 每帧推进子弹：移动 + 追踪转向 + 命中判定 + 生命周期
 func _update_shots(delta: float) -> void:
@@ -1025,7 +1103,7 @@ func _update_shots(delta: float) -> void:
 					if ids.has(eid):
 						continue
 					ids.append(eid)
-					_damage_enemy(j, attack_damage)
+					_damage_enemy(j, shot_damage[i])
 					shot_hits[i] += 1
 					if enemy_hp[j] <= 0.0:
 						kill_pending.append(j)
@@ -1039,6 +1117,7 @@ func _update_shots(delta: float) -> void:
 			ProtoLogic.swap_pop(shot_life, i)
 			ProtoLogic.swap_pop(shot_pierce, i)
 			ProtoLogic.swap_pop(shot_hits, i)
+			ProtoLogic.swap_pop(shot_damage, i)
 			ProtoLogic.swap_pop(shot_hit_ids, i)
 		i -= 1
 
@@ -1075,6 +1154,7 @@ func clear_shots() -> void:
 	shot_life.clear()
 	shot_pierce.clear()
 	shot_hits.clear()
+	shot_damage.clear()
 	shot_hit_ids.clear()
 
 
