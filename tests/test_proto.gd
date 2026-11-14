@@ -37,6 +37,7 @@ func _init() -> void:
 	test_warrior_cleave_hits_area()
 	test_block_library_and_sockets()
 	test_casting_consumes_mana()
+	test_projectile_and_track()
 	test_boss_and_safe_zone()
 	test_modifier_changes_attack()
 	test_pipeline_empty()
@@ -114,8 +115,9 @@ func test_aoe_kills_and_gems() -> void:
 	sim.enemy_hp.append(1.0)
 	sim.enemy_id.append(0)
 	var kills_before: int = sim.kills
-	sim.step(0.016, Vector2.ZERO)
-	check(sim.kills > kills_before, "AoE 命中并击杀范围内敌人")
+	for i in range(12):
+		sim.step(0.016, Vector2.ZERO)
+	check(sim.kills > kills_before, "子弹命中并击杀范围内敌人")
 	var dropped_or_picked: bool = sim.gem_pos.size() >= 1 or sim.gems_collected >= 1 or sim.xp > 0.0
 	check(dropped_or_picked, "击杀后掉落绿色宝石（或被磁吸立即拾取）")
 
@@ -232,7 +234,8 @@ func test_select_char_changes_stats() -> void:
 	sim._select_char("mage")
 	check(sim.char_id == "mage", "切换回法师")
 	check(absf(sim.player_max_hp - 100.0) < 0.001, "法师血量 100")
-	check(absf(sim.attack_cooldown - 0.60) < 0.001, "法师攻击冷却 0.60")
+	# 法师被动：攻速 +10% → 冷却 0.60 / 1.10
+	check(absf(sim.attack_cooldown - 0.60 / 1.10) < 0.001, "法师被动攻速 +10%（冷却 0.545）")
 
 
 func test_auto_attack_hits_nearest() -> void:
@@ -245,7 +248,8 @@ func test_auto_attack_hits_nearest() -> void:
 	sim.enemy_id.append(0)
 	sim.enemy_id.append(1)
 	sim.attack_timer = 0.0
-	sim.step(0.016, Vector2.ZERO)
+	for i in range(10):
+		sim.step(0.016, Vector2.ZERO)
 	check(sim.enemy_hp[0] < 100.0, "最近敌人受到伤害")
 	check(sim.enemy_hp[1] >= 100.0, "远处敌人未受伤")
 
@@ -279,8 +283,11 @@ func test_attack_only_when_in_range() -> void:
 	sim.enemy_pos[0] = sim.player_pos + Vector2(r * 0.5, 0.0)
 	sim.step(0.016, Vector2.ZERO)
 	check(sim.aoe_pulses > pulses_before, "敌人进圈后立刻攻击")
-	check(sim.enemy_hp[0] < 1000.0, "进圈敌人受到伤害")
 	check(sim.attack_flash > 0.0, "攻击时播放武器特效")
+	check(sim.shot_pos.size() > 0, "远程角色发射了子弹")
+	for i in range(10):
+		sim.step(0.016, Vector2.ZERO)
+	check(sim.enemy_hp[0] < 1000.0, "进圈敌人受到伤害（子弹飞行后命中）")
 
 
 ## 战士是范围横扫：一圈内多目标同时受伤，圈外不受伤；法师仍是单体
@@ -313,7 +320,7 @@ func test_warrior_cleave_hits_area() -> void:
 	check(hit_in == 5, "战士一刀命中范围内全部 5 个敌人")
 	check(sim.enemy_hp[5] >= 500.0, "范围外敌人未受伤")
 
-	# 对照：法师仍是单体攻击
+	# 对照：法师是「穿透子弹」——一颗子弹沿直线打穿 3 个敌人
 	var mage := ProtoSim.new()
 	mage._select_char("mage")
 	mage.enemy_pos.clear()
@@ -324,12 +331,13 @@ func test_warrior_cleave_hits_area() -> void:
 		mage.enemy_hp.append(500.0)
 		mage.enemy_id.append(i)
 	mage.attack_timer = 0.0
-	mage.step(0.016, Vector2.ZERO)
+	for i in range(12):
+		mage.step(0.016, Vector2.ZERO)
 	var mage_hit := 0
 	for i in range(3):
 		if mage.enemy_hp[i] < 500.0:
 			mage_hit += 1
-	check(mage_hit == 1, "法师仍是单体攻击（命中 1 个）")
+	check(mage_hit == 3, "法师子弹穿透命中 3 个敌人（穿透=直线打穿）")
 
 
 ## 指令块库：通用 + 角色专属；只能装备掉落的块；插槽类型匹配
@@ -413,7 +421,8 @@ func test_casting_consumes_mana() -> void:
 	var expect: float = mana0 + sim.mana_regen * 0.016 - float(cost)
 	check(absf(sim.mana - expect) < 0.5, "扣蓝量等于管线耗蓝（含当帧回复）")
 
-	# 蓝不够：不施法
+	# 蓝不够：不施法（先清掉还在飞的子弹）
+	sim.clear_shots()
 	sim.mana = 0.0
 	sim.attack_timer = 0.0
 	var hp_before: float = sim.enemy_hp[0]
@@ -461,6 +470,65 @@ func test_boss_and_safe_zone() -> void:
 	sim.continue_from_safe_zone()
 	check(not sim.is_safe_zone(), "安全区点继续后离开")
 
+
+## 弹道：子弹要飞行才命中；穿透有上限；追踪块增加射程且会转向
+func test_projectile_and_track() -> void:
+	var sim := ProtoSim.new()
+	sim._select_char("mage")
+	var base_r: float = sim.attack_radius
+
+	# 1) 发射瞬间子弹存在，敌人还没掉血（需要飞行）
+	sim.enemy_pos.append(sim.player_pos + Vector2(70.0, 0.0))
+	sim.enemy_hp.append(500.0)
+	sim.enemy_id.append(0)
+	sim.attack_timer = 0.0
+	sim.step(0.016, Vector2.ZERO)
+	check(sim.shot_pos.size() > 0, "施法生成子弹")
+	check(absf(sim.enemy_hp[0] - 500.0) < 0.001, "子弹未到达前敌人不掉血")
+	for i in range(12):
+		sim.step(0.016, Vector2.ZERO)
+	check(sim.enemy_hp[0] < 500.0, "子弹飞行后命中敌人")
+
+	# 2) 穿透上限：法师穿透 3，5 个排队的敌人只被打穿 3 个
+	var line := ProtoSim.new()
+	line._select_char("mage")
+	for i in range(5):
+		line.enemy_pos.append(line.player_pos + Vector2(20.0 * float(i + 1), 0.0))
+		line.enemy_hp.append(500.0)
+		line.enemy_id.append(i)
+	line.attack_timer = 0.0
+	for i in range(20):
+		line.step(0.016, Vector2.ZERO)
+	var hit_n := 0
+	for i in range(5):
+		if line.enemy_hp[i] < 500.0:
+			hit_n += 1
+	check(hit_n == 3, "穿透上限=3：只打穿 3 个敌人，不是群伤")
+
+	# 3) 追踪块：每层 +35% 射程，可叠加
+	var trk := ProtoSim.new()
+	trk._select_char("mage")
+	var r0: float = trk.attack_radius
+	trk.grant_block("mod_track")
+	check(trk.equip_socket(0, 1, "mod_track"), "装上追踪块")
+	check(absf(trk.attack_radius - r0 * 1.35) < 0.01, "1 层追踪：射程 ×1.35")
+	trk.grant_block("mod_track")
+	check(trk.equip_socket(0, 2, "mod_track"), "再装一层追踪")
+	check(absf(trk.attack_radius - r0 * 1.35 * 1.35) < 0.01, "2 层追踪射程叠加")
+
+	# 4) 追踪能打到基础射程外的敌人（射程变大后进圈）
+	var far := ProtoSim.new()
+	far._select_char("mage")
+	far.grant_block("mod_track")
+	far.equip_socket(0, 1, "mod_track")
+	var far_d: float = far.attack_radius * 0.9
+	far.enemy_pos.append(far.player_pos + Vector2(far_d, 0.0))
+	far.enemy_hp.append(500.0)
+	far.enemy_id.append(0)
+	var pulses0: int = far.aoe_pulses
+	far.attack_timer = 0.0
+	far.step(0.016, Vector2.ZERO)
+	check(far.aoe_pulses > pulses0, "追踪射程内的远目标也会开火")
 
 func test_modifier_changes_attack() -> void:
 	var sim := ProtoSim.new()

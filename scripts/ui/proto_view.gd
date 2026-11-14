@@ -568,6 +568,21 @@ func _draw() -> void:
 			continue
 		draw_circle(sp, 7.0, Color(1, 0.55, 0.55, 0.95))
 
+	# 玩家子弹：小圆点 + 拖尾（穿透/追踪在飞行中体现）
+	for i in range(sim.shot_pos.size()):
+		var bp: Vector2 = sim.shot_pos[i]
+		if not vp.grow(pad).has_point(bp):
+			continue
+		var bd: Vector2 = sim.shot_dir[i]
+		var bcol := Color(0.72, 0.88, 1.0)
+		if sim.char_id == "hunter":
+			bcol = Color(0.82, 1.0, 0.86)
+		elif sim.char_id == "priest":
+			bcol = Color(1.0, 0.9, 0.55)
+		draw_line(bp - bd * 20.0, bp, Color(bcol.r, bcol.g, bcol.b, 0.45), 3.0)
+		draw_circle(bp, 5.5, bcol)
+		draw_circle(bp, 5.5, Color(1, 1, 1, 0.85), false, 1.2)
+
 	# Blue square player (invulnerable frame flash)
 	var half_p := Tuning.PLAYER_SIZE * 0.5
 	var pcol := Color(0.28, 0.55, 1.0)
@@ -645,15 +660,7 @@ func _draw_weapon_attack(flash: float) -> void:
 				best_d2 = d2
 				face = (ep - p).normalized()
 
-	if sim.char_id == "mage":
-		# Staff: white beam toward nearest enemy
-		var beam_end: Vector2 = p + face * r
-		var beam_col := Color(1, 1, 1, alpha)
-		draw_line(p, beam_end, beam_col, width)
-		# tip flare
-		draw_circle(beam_end, 6.0 * pct, beam_col, true)
-
-	elif sim.char_id == "warrior":
+	if sim.char_id == "warrior":
 		# Blade: 360° 横扫（逻辑就是整圈命中）——淡红整圈 + 扫过的一道光弧
 		var arc_col := Color(1, 0.35, 0.35, alpha)
 		draw_circle(p, r, Color(1, 0.35, 0.35, 0.12 * pct), true)
@@ -662,18 +669,13 @@ func _draw_weapon_attack(flash: float) -> void:
 		var sweep_end: float = -PI * 0.5 + TAU * (1.0 - pct)
 		draw_arc(p, r - 2.0, sweep_end - 1.1, sweep_end, 24, arc_col, width + 2.0)
 		draw_circle(p, 4.0 * pct, arc_col, true)
-
-	elif sim.char_id == "hunter":
-		# Bow: two diverging white shots
-		var perp: Vector2 = Vector2(-face.y, face.x)
-		var shot_len: float = r * 0.9
-		var shot_col := Color(1, 1, 1, alpha)
-		draw_line(p, p + face * shot_len - perp * (20.0 * pct), shot_col, width)
-		draw_line(p, p + face * shot_len + perp * (20.0 * pct), shot_col, width)
-
-	elif sim.char_id == "priest":
-		# Tome: white pulse ring expanding from player
-		var ring_r: float = r * (0.5 + 0.8 * (1.0 - pct))
-		var ring_col := Color(1, 1, 1, alpha * 0.7)
-		draw_circle(p, ring_r, ring_col, false, 2.0 + 2.0 * pct)
-		draw_circle(p, 5.0 * pct, ring_col, true)
+	else:
+		# 远程角色：枪口闪光（真正的攻击表现由飞行的子弹承担）
+		var muzzle_col := Color(0.75, 0.9, 1.0, alpha)
+		if sim.char_id == "hunter":
+			muzzle_col = Color(0.85, 1.0, 0.9, alpha)
+		elif sim.char_id == "priest":
+			muzzle_col = Color(1.0, 0.9, 0.55, alpha)
+		var muzzle: Vector2 = p + face * 18.0
+		draw_circle(muzzle, 8.0 * pct, muzzle_col, true)
+		draw_line(p + face * 10.0, p + face * 34.0, muzzle_col, width)

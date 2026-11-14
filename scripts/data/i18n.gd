@@ -175,16 +175,16 @@ const UI := {
 
 const CHARS := {
 	"zh": {
-		"mage":    {"name": "法师", "weapon": "法杖", "tag": "远程 · 追踪弹", "passive": "法力回复：攻速 +10%"},
+		"mage":    {"name": "法师", "weapon": "法杖", "tag": "远程 · 穿透弹", "passive": "法力回复：攻速 +10%"},
 		"warrior": {"name": "战士", "weapon": "刀刃", "tag": "近战 · 范围横扫", "passive": "近战抗性：接触伤害 -30%"},
 		"hunter":  {"name": "猎人", "weapon": "弓",   "tag": "远程 · 双发",   "passive": "移动速度 +15%"},
-		"priest":  {"name": "牧师", "weapon": "法书", "tag": "范围 · 吸血",   "passive": "吸血：击杀回复 2% 最大生命"},
+		"priest":  {"name": "牧师", "weapon": "法书", "tag": "穿透 · 吸血",   "passive": "吸血：击杀回复 2% 最大生命"},
 	},
 	"en": {
-		"mage":    {"name": "Mage",    "weapon": "Staff", "tag": "Ranged · Homing",    "passive": "Mana Regen: +10% attack speed"},
+		"mage":    {"name": "Mage",    "weapon": "Staff", "tag": "Ranged · Piercing",    "passive": "Mana Regen: +10% attack speed"},
 		"warrior": {"name": "Warrior", "weapon": "Blade", "tag": "Melee · Cleave",     "passive": "Melee Resist: -30% contact damage"},
 		"hunter":  {"name": "Hunter",  "weapon": "Bow",   "tag": "Ranged · Twin Shot", "passive": "Move +15%"},
-		"priest":  {"name": "Priest",  "weapon": "Tome",  "tag": "AoE · Lifesteal",    "passive": "Lifesteal: +2% max HP on kill"},
+		"priest":  {"name": "Priest",  "weapon": "Tome",  "tag": "Piercing · Lifesteal",    "passive": "Lifesteal: +2% max HP on kill"},
 	},
 }
 
@@ -245,25 +245,25 @@ const UPGRADES := {
 ## 指令块效果说明（背包里显示，回答「这块是干什么的」）
 const BLOCK_DESC := {
 	"zh": {
-		"action_projectile": "发射投射物造成伤害",
+		"action_projectile": "发射穿透子弹",
 		"action_melee": "横扫身边一圈敌人",
 		"action_field": "在脚下召唤持续伤害区域",
 		"action_aoe": "以自身为中心范围伤害",
-		"mod_penetrate": "每次多打 2 个敌人",
-		"mod_multi": "每轮多打 1 次",
-		"mod_track": "攻击自动追踪敌人",
+		"mod_penetrate": "子弹可多穿透 2 个敌人",
+		"mod_multi": "每次多发射 1 颗子弹",
+		"mod_track": "子弹追踪敌人，射程 +35%（可叠加）",
 		"mod_range": "攻击范围 ×1.30",
 		"mod_cooldown": "攻击间隔 ×0.86（更快）",
 		"mod_dot": "命中附加持续伤害",
 	},
 	"en": {
-		"action_projectile": "Fire a projectile",
+		"action_projectile": "Fire piercing bullets",
 		"action_melee": "Cleave all enemies around you",
 		"action_field": "Summon a damage-over-time field",
 		"action_aoe": "Area damage centered on you",
-		"mod_penetrate": "Hit 2 more enemies per swing",
-		"mod_multi": "One extra hit per attack",
-		"mod_track": "Attacks home in on enemies",
+		"mod_penetrate": "Bullets pierce 2 more enemies",
+		"mod_multi": "Fire 1 extra bullet",
+		"mod_track": "Homing bullets, range +35% (stacks)",
 		"mod_range": "Attack range ×1.30",
 		"mod_cooldown": "Attack interval ×0.86 (faster)",
 		"mod_dot": "Hits apply damage over time",

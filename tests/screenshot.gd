@@ -77,15 +77,15 @@ func _run() -> void:
 			await process_frame
 		suffix += "_safe"
 	else:
-		# 等到攻击瞬间再抓图，确保武器特效出现在画面里
-		var got_flash := false
-		for i in range(240):
+		# 等到子弹在飞的时候抓图（弹道/子弹特效是这轮的重点）
+		var got_shot := false
+		for i in range(300):
 			await process_frame
-			if inst.sim.attack_flash > 0.10:
-				got_flash = true
+			if inst.sim.shot_pos.size() > 0:
+				got_shot = true
 				break
-		if not got_flash:
-			push_warning("未捕捉到攻击瞬间，仍保存当前帧")
+		if not got_shot:
+			push_warning("未捕捉到子弹飞行帧，仍保存当前帧")
 
 	await RenderingServer.frame_post_draw
 	var img := root.get_texture().get_image()

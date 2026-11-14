@@ -52,7 +52,7 @@ func _run() -> void:
 	check(I18n.ui("start") == "开 始 游 戏", "中文开始按钮文案")
 	check(I18n.ui("lang_switch") == "English", "中文界面显示 English 切换按钮")
 	check(I18n.char_info("mage", "name") == "法师", "中文角色名")
-	check(I18n.char_info("mage", "tag") == "远程 · 追踪弹", "中文角色定位")
+	check(I18n.char_info("mage", "tag") == "远程 · 穿透弹", "中文角色定位")
 	start_view.toggle_language()
 	check(GameStateData.language == "en", "切换后语言为英文")
 	check(I18n.ui("start") == "S T A R T", "英文开始按钮文案")

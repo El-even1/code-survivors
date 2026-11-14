@@ -58,7 +58,23 @@ var attack_radius := 108.0
 var attack_pierce := 1
 var attack_multi := 1
 var attack_track := false
+var attack_track_stacks := 0
 var attack_flash := 0.0   # 攻击闪现倒计时，供视觉层渲染武器攻击特效
+
+## 角色被动（选人时写入）
+var contact_damage_mult := 1.0
+var lifesteal_on_kill := 0.0
+
+## ---------- 弹道（远程角色真正发射子弹）----------
+var shot_pos: Array[Vector2] = []
+var shot_dir: Array[Vector2] = []
+var shot_life: Array[float] = []
+var shot_pierce: Array[int] = []
+var shot_hits: Array[int] = []
+var shot_hit_ids: Array = []         # 每颗子弹已命中的 enemy_id（防止同一颗重复命中）
+var shot_speed := 560.0
+var shot_radius := 7.0
+const SHOT_MAX := 60
 
 var magnet_radius := Tuning.MAGNET_RADIUS
 var aoe_timer := 0.0
@@ -149,31 +165,44 @@ func _select_char(cid: String) -> void:
 	mana = mana_max
 	mana_regen = float(cfg.get("mana_regen", 8.0))
 
+	# 角色被动（Tuning 里写的被动现在真正生效）
+	contact_damage_mult = 1.0
+	lifesteal_on_kill = 0.0
+	var atk_speed_mult := 1.0
+	var move_mult := 1.0
+
 	if cid == "mage":
-		base_attack_damage = 25.0
-		base_attack_radius = 60.0
-		base_attack_pierce = 1
+		# 法师：小范围 AoE 弹（一次打 3 个），范围给足，前期不弱势
+		base_attack_damage = 24.0
+		base_attack_radius = 85.0
+		base_attack_pierce = 3
 		base_attack_multi = 1
-		attack_track = true
+		atk_speed_mult = 1.10          # 被动：攻速 +10%
 	elif cid == "warrior":
 		# 近战横扫：刀光覆盖一圈，范围内敌人全部命中（范围攻击）
 		base_attack_damage = 30.0
 		base_attack_radius = 95.0
 		base_attack_pierce = 99
 		base_attack_multi = 1
-		attack_track = false
+		contact_damage_mult = 0.70     # 被动：接触伤害 -30%
 	elif cid == "hunter":
+		# 双发：每次攻击 2 轮命中
 		base_attack_damage = 20.0
-		base_attack_radius = 50.0
+		base_attack_radius = 60.0
 		base_attack_pierce = 1
 		base_attack_multi = 2
-		attack_track = true
+		move_mult = 1.15               # 被动：移速 +15%
 	elif cid == "priest":
 		base_attack_damage = 12.0
 		base_attack_radius = 90.0
-		base_attack_pierce = 1
+		base_attack_pierce = 2
 		base_attack_multi = 1
-		attack_track = false
+		lifesteal_on_kill = 0.02       # 被动：击杀回复 2% 最大生命
+
+	base_attack_cooldown = char_base_cooldown / atk_speed_mult
+	attack_cooldown = base_attack_cooldown
+	player_speed = char_base_speed * move_mult
+	attack_track = false
 
 	_recalc_attack_stats()
 	_reset_slots_for_char(cid)
@@ -183,6 +212,7 @@ func _select_char(cid: String) -> void:
 	block_drop_id.clear()
 	block_toast = ""
 	block_toast_timer = 0.0
+	clear_shots()
 	level_sim.start_sector("sector_a")
 
 
@@ -218,6 +248,7 @@ func _recalc_attack_stats() -> void:
 	attack_pierce = base_attack_pierce
 	attack_multi = base_attack_multi
 	attack_track = false
+	attack_track_stacks = 0
 
 
 func _apply_all_modifiers() -> void:
@@ -241,8 +272,12 @@ func _apply_all_modifiers() -> void:
 						pass
 					"mod_track":
 						attack_track = true
+						attack_track_stacks += 1
 					_:
 						pass
+	# 追踪：每层 +35% 攻击范围，并且优先命中最近的敌人（可叠加）
+	if attack_track_stacks > 0:
+		attack_radius *= pow(1.35, float(attack_track_stacks))
 
 
 func apply_upgrade(id: String) -> void:
@@ -608,6 +643,9 @@ func step(delta: float, input_dir: Vector2) -> void:
 	if attack_flash > 0.0:
 		attack_flash -= delta
 
+	# 弹道推进（子弹飞行 / 追踪 / 穿透命中）
+	_update_shots(delta)
+
 	var pipeline_events := _execute_pipeline(delta)
 	_apply_pipeline_events(pipeline_events)
 
@@ -693,12 +731,17 @@ func _clamp_player() -> void:
 
 
 ## 攻击范围内是否有目标（Boss 战中 Boss 就是目标）
+## 实际攻击范围（含追踪块加成）
+func effective_attack_radius() -> float:
+	return attack_radius
+
+
 func _has_target_in_range() -> bool:
 	if current_boss != "":
 		# Boss 体积大：按 Boss 边缘到玩家距离判断，站近了才打得到
-		var reach := attack_radius + boss_radius
+		var reach := effective_attack_radius() + boss_radius
 		return boss_pos.distance_squared_to(player_pos) <= reach * reach
-	var r2 := attack_radius * attack_radius
+	var r2 := effective_attack_radius() * effective_attack_radius()
 	for p in enemy_pos:
 		if p.distance_squared_to(player_pos) <= r2:
 			return true
@@ -766,6 +809,7 @@ func _enter_boss(bid: String) -> void:
 	enemy_pos.clear()
 	enemy_hp.clear()
 	enemy_id.clear()
+	clear_shots()
 	boss_shots_pos.clear()
 	boss_shots_dir.clear()
 	boss_shots_life.clear()
@@ -787,6 +831,7 @@ func _enter_safe_zone() -> void:
 	enemy_pos.clear()
 	enemy_hp.clear()
 	enemy_id.clear()
+	clear_shots()
 	boss_shots_pos.clear()
 	boss_shots_dir.clear()
 	boss_shots_life.clear()
@@ -826,7 +871,7 @@ func _update_boss(delta: float) -> void:
 	if iframe_timer <= 0.0:
 		var touch_r := boss_radius + Tuning.PLAYER_SIZE * 0.5
 		if boss_pos.distance_squared_to(player_pos) <= touch_r * touch_r:
-			player_hp -= 12.0
+			player_hp -= 12.0 * contact_damage_mult
 			iframe_timer = Tuning.CONTACT_IFRAMES
 			last_hit_time = elapsed
 
@@ -877,43 +922,167 @@ func _fire_attack() -> void:
 		_push_dmg_text(boss_pos, attack_damage)
 		return
 
-	if enemy_pos.size() == 0:
-		return
-	var nearest_idx := -1
-	var nearest_d2 := 999999.0
-	for i in range(enemy_pos.size()):
-		var d2 := enemy_pos[i].distance_squared_to(player_pos)
-		if d2 < nearest_d2:
-			nearest_d2 = d2
-			nearest_idx = i
-	if nearest_idx < 0:
-		return
+	if char_id == "warrior":
+		# 战士：近战横扫，瞬间结算范围内目标
+		_fire_cleave()
+	else:
+		# 法师/猎人/牧师：发射真正的弹道，穿透 = 子弹打穿几个敌人
+		_fire_projectiles()
 
+
+func _fire_cleave() -> void:
+	var eff_r := effective_attack_radius()
+	var r2 := eff_r * eff_r
+	var cand: Array[int] = []
+	for i in range(enemy_pos.size()):
+		if enemy_pos[i].distance_squared_to(player_pos) <= r2:
+			cand.append(i)
+	if cand.is_empty():
+		return
+	cand.sort_custom(func(a: int, b: int) -> bool:
+		return enemy_pos[a].distance_squared_to(player_pos) < enemy_pos[b].distance_squared_to(player_pos)
+	)
+	var max_hits: int = maxi(1, attack_multi * attack_pierce)
 	aoe_pulses += 1
-	var m := attack_multi
-	for k in range(m):
-		var damage := attack_damage
-		var hit := false
-		var hit_count := 0
-		var i := enemy_pos.size() - 1
-		while i >= 0 and hit_count < attack_pierce:
-			var ep := enemy_pos[i]
-			var d2 := ep.distance_squared_to(player_pos)
-			if d2 <= attack_radius * attack_radius:
-				enemy_hp[i] -= damage
-				damage_dealt += damage
-				_push_dmg_text(ep, damage)
-				hit_count += 1
-				if enemy_hp[i] <= 0.0:
-					_kill_enemy(i)
-				hit = true
-			i -= 1
-		if hit:
+	var hit_n := 0
+	var to_kill: Array[int] = []
+	for i in cand:
+		if hit_n >= max_hits:
 			break
+		_damage_enemy(i, attack_damage)
+		hit_n += 1
+		if enemy_hp[i] <= 0.0:
+			to_kill.append(i)
+	_flush_kills(to_kill)
+
+
+## 发射子弹：每颗独立飞、按穿透数依次打穿敌人
+func _fire_projectiles() -> void:
+	var eff_r := effective_attack_radius()
+	var r2 := eff_r * eff_r
+	var cand: Array[int] = []
+	for i in range(enemy_pos.size()):
+		if enemy_pos[i].distance_squared_to(player_pos) <= r2:
+			cand.append(i)
+	if cand.is_empty():
+		return
+	cand.sort_custom(func(a: int, b: int) -> bool:
+		return enemy_pos[a].distance_squared_to(player_pos) < enemy_pos[b].distance_squared_to(player_pos)
+	)
+
+	var shots := maxi(1, attack_multi)
+	var flight_life: float = eff_r / shot_speed
+	var pierce_n := maxi(1, attack_pierce)
+	aoe_pulses += 1
+	for k in range(shots):
+		if shot_pos.size() >= SHOT_MAX:
+			break
+		var ti: int = cand[k % cand.size()]
+		var aim: Vector2 = enemy_pos[ti] - player_pos
+		if aim.length_squared() < 0.01:
+			aim = Vector2.RIGHT
+		shot_pos.append(player_pos)
+		shot_dir.append(aim.normalized())
+		shot_life.append(flight_life)
+		shot_pierce.append(pierce_n)
+		shot_hits.append(0)
+		shot_hit_ids.append([])
+
+
+## 每帧推进子弹：移动 + 追踪转向 + 命中判定 + 生命周期
+func _update_shots(delta: float) -> void:
+	if shot_pos.size() == 0:
+		return
+	var hit_r := (Tuning.ENEMY_SIZE + shot_radius) * 0.5
+	var hit_r2 := hit_r * hit_r
+	var kill_pending: Array[int] = []
+	var i := shot_pos.size() - 1
+	while i >= 0:
+		# 追踪：朝最近敌人持续转向
+		if attack_track and enemy_pos.size() > 0:
+			var nearest := -1
+			var nd := 9999999.0
+			for j in range(enemy_pos.size()):
+				var d := shot_pos[i].distance_squared_to(enemy_pos[j])
+				if d < nd:
+					nd = d
+					nearest = j
+			if nearest >= 0:
+				var want: Vector2 = (enemy_pos[nearest] - shot_pos[i]).normalized()
+				shot_dir[i] = shot_dir[i].lerp(want, clampf(9.0 * delta, 0.0, 1.0)).normalized()
+
+		shot_pos[i] = shot_pos[i] + shot_dir[i] * shot_speed * delta
+		shot_life[i] -= delta
+
+		var remove := shot_life[i] <= 0.0
+		if not remove:
+			for j in range(enemy_pos.size()):
+				if enemy_hp[j] <= 0.0:
+					continue
+				if shot_pos[i].distance_squared_to(enemy_pos[j]) <= hit_r2:
+					var ids: Array = shot_hit_ids[i]
+					var eid := enemy_id[j]
+					if ids.has(eid):
+						continue
+					ids.append(eid)
+					_damage_enemy(j, attack_damage)
+					shot_hits[i] += 1
+					if enemy_hp[j] <= 0.0:
+						kill_pending.append(j)
+					if shot_hits[i] >= shot_pierce[i]:
+						remove = true
+						break
+
+		if remove:
+			ProtoLogic.swap_pop(shot_pos, i)
+			ProtoLogic.swap_pop(shot_dir, i)
+			ProtoLogic.swap_pop(shot_life, i)
+			ProtoLogic.swap_pop(shot_pierce, i)
+			ProtoLogic.swap_pop(shot_hits, i)
+			ProtoLogic.swap_pop(shot_hit_ids, i)
+		i -= 1
+
+	_flush_kills(kill_pending)
+
+
+func _damage_enemy(idx: int, amount: float) -> void:
+	if idx < 0 or idx >= enemy_hp.size():
+		return
+	enemy_hp[idx] -= amount
+	damage_dealt += amount
+	_push_dmg_text(enemy_pos[idx], amount)
+
+
+func _flush_kills(indices: Array) -> void:
+	if indices.is_empty():
+		return
+	indices.sort()
+	indices.reverse()
+	var seen := {}
+	for idx in indices:
+		if idx < 0 or idx >= enemy_hp.size():
+			continue
+		if seen.has(idx):
+			continue
+		seen[idx] = true
+		if enemy_hp[idx] <= 0.0:
+			_kill_enemy(idx)
+
+
+func clear_shots() -> void:
+	shot_pos.clear()
+	shot_dir.clear()
+	shot_life.clear()
+	shot_pierce.clear()
+	shot_hits.clear()
+	shot_hit_ids.clear()
 
 
 func _kill_enemy(idx: int) -> void:
 	kills += 1
+	# 牧师被动：击杀回复 2% 最大生命
+	if lifesteal_on_kill > 0.0:
+		player_hp = minf(player_max_hp, player_hp + player_max_hp * lifesteal_on_kill)
 	if gem_pos.size() < Tuning.GEM_MAX:
 		gem_pos.append(enemy_pos[idx])
 		gem_value.append(Tuning.GEM_VALUE)
@@ -999,7 +1168,7 @@ func _enemy_touch(delta: float) -> void:
 	var r2 := r * r
 	for i in range(enemy_pos.size()):
 		if enemy_pos[i].distance_squared_to(player_pos) <= r2:
-			player_hp -= Tuning.CONTACT_DAMAGE
+			player_hp -= Tuning.CONTACT_DAMAGE * contact_damage_mult
 			last_hit_time = elapsed
 			iframe_timer = Tuning.CONTACT_IFRAMES
 			if player_hp <= 0.0:
