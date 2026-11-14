@@ -37,6 +37,7 @@ func _init() -> void:
 	test_warrior_cleave_hits_area()
 	test_block_library_and_sockets()
 	test_casting_consumes_mana()
+	test_boss_and_safe_zone()
 	test_modifier_changes_attack()
 	test_pipeline_empty()
 	test_pipeline_modifier_chain()
@@ -426,6 +427,39 @@ func test_casting_consumes_mana() -> void:
 	sim.mana = 0.0
 	sim.step(1.0, Vector2.ZERO)
 	check(sim.mana > 0.0, "蓝量随时间自动回复")
+
+
+## Boss 战 + 安全区：进 Boss 清场、打 Boss 掉血、击杀后进安全区回血、点继续离开
+func test_boss_and_safe_zone() -> void:
+	var sim := ProtoSim.new()
+	sim._select_char("warrior")
+	sim.level_sim.start_boss("boss_1")
+	sim.step(0.016, Vector2.ZERO)
+	check(sim.is_boss_fight(), "进入 Boss 战")
+	check(sim.boss_hp > 0.0, "Boss 有血量")
+	check(sim.enemy_pos.size() == 0, "Boss 战不刷小怪")
+
+	var hp0: float = sim.boss_hp
+	# Boss 体积大：把 Boss 放到攻击距离内再验证掉血
+	sim.boss_pos = sim.player_pos + Vector2(60.0, 0.0)
+	sim.attack_timer = 0.0
+	sim.step(0.016, Vector2.ZERO)
+	check(sim.boss_hp < hp0, "攻击让 Boss 掉血")
+
+	# 击杀 Boss → 进入安全区并回血
+	sim.player_hp = sim.player_max_hp * 0.4
+	sim.level_sim.set_boss_hp(0.0)
+	sim.step(0.016, Vector2.ZERO)
+	check(not sim.is_boss_fight(), "Boss 被击败")
+	check(sim.is_safe_zone(), "Boss 后进入安全区")
+	check(sim.player_hp > sim.player_max_hp * 0.4, "安全区恢复生命")
+
+	# 安全区里不刷怪、可继续
+	var enemies_in_safe: int = sim.enemy_pos.size()
+	sim.step(0.5, Vector2.ZERO)
+	check(sim.enemy_pos.size() == enemies_in_safe, "安全区不刷怪")
+	sim.continue_from_safe_zone()
+	check(not sim.is_safe_zone(), "安全区点继续后离开")
 
 
 func test_modifier_changes_attack() -> void:

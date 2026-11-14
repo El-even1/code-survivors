@@ -55,6 +55,14 @@ const UI := {
 		"chip_mana": "耗蓝 %d",
 		"bar_hp": "生命 %d/%d",
 		"bar_mana": "蓝量 %d/%d",
+		"hud_sector": "关卡 %s　%.0fs",
+		"hud_boss": "Boss：%s",
+		"hud_safe": "安全区",
+		"boss_bar": "%s · 第 %d 阶段　%d/%d",
+		"boss_bar_safe": "%s　%d/%d",
+		"safe_title": "安全区",
+		"safe_hint": "已恢复 30% 最大生命 · 按 B 整理背包后再出发",
+		"safe_continue": "继续（Enter）",
 		"reason_not_allowed": "该角色不能使用这个指令块",
 		"reason_no_stock": "存放区里没有这个指令块",
 		"reason_wrong_kind": "槽位类型不匹配",
@@ -129,6 +137,14 @@ const UI := {
 		"chip_mana": "Cost %d",
 		"bar_hp": "HP %d/%d",
 		"bar_mana": "Mana %d/%d",
+		"hud_sector": "Stage %s　%.0fs",
+		"hud_boss": "Boss: %s",
+		"hud_safe": "Safe Zone",
+		"boss_bar": "%s · Phase %d　%d/%d",
+		"boss_bar_safe": "%s　%d/%d",
+		"safe_title": "Safe Zone",
+		"safe_hint": "Healed 30% max HP · press B to organize, then set off",
+		"safe_continue": "Continue (Enter)",
 		"reason_not_allowed": "This character can't use that block",
 		"reason_no_stock": "No such block in storage",
 		"reason_wrong_kind": "Wrong socket type",
@@ -260,6 +276,24 @@ const PHASES := {
 	"en": {"survive": "Survival", "grow": "Growth", "pressure": "Pressure", "limit": "Limit"},
 }
 
+## 关卡区域名
+const SECTORS := {
+	"zh": {
+		"sector_a": "数据洪流",
+		"sector_b": "防火墙堡垒",
+		"safe_zone": "安全区",
+		"boss_1": "数据核心",
+		"boss_2": "协议守卫",
+	},
+	"en": {
+		"sector_a": "Data Flood",
+		"sector_b": "Firewall Fortress",
+		"safe_zone": "Safe Zone",
+		"boss_1": "Data Core",
+		"boss_2": "Protocol Guardian",
+	},
+}
+
 ## 指令块共鸣标签
 const TAGS := {
 	"zh": {
@@ -332,6 +366,12 @@ static func block_desc(block_id: String) -> String:
 	if tpl != null:
 		return String(tpl.get("desc", block_id))
 	return block_id
+
+
+## 关卡区域名（数据洪流 / 防火墙堡垒 / 安全区 / Boss 名）
+static func sector_name(sector_id: String) -> String:
+	var table: Dictionary = SECTORS.get(_lang(), SECTORS["zh"])
+	return String(table.get(sector_id, sector_id))
 
 
 ## 按时间返回当前阶段名（本地化）

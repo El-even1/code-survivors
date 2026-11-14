@@ -10,16 +10,16 @@ const SECTOR_DATA := {
 		"name": "Data Flood",
 		"enemy_batch": 4,
 		"spawn_interval": 0.15,
-		"ramp_seconds": 110.0,
-		"duration_sec": 180.0,
+		"ramp_seconds": 30.0,
+		"duration_sec": 45.0,
 		"description": "High-frequency small enemies, tests AoE pipeline"
 	},
 	"sector_b": {
 		"name": "Firewall Fortress",
 		"enemy_batch": 2,
 		"spawn_interval": 0.25,
-		"ramp_seconds": 90.0,
-		"duration_sec": 180.0,
+		"ramp_seconds": 30.0,
+		"duration_sec": 60.0,
 		"description": "Elite enemies, fewer but tanky, tests burst/pierce pipeline"
 	},
 	"safe_zone": {
@@ -27,8 +27,8 @@ const SECTOR_DATA := {
 		"enemy_batch": 0,
 		"spawn_interval": 9999.0,
 		"ramp_seconds": 0.0,
-		"duration_sec": 0.0,
-		"description": "Safe zone for pipeline editing between sectors"
+		"duration_sec": 9999.0,
+		"description": "Safe zone for pipeline editing between sectors (player continues manually)"
 	}
 }
 
@@ -60,20 +60,18 @@ const LEVEL_CONFIG := {
 
 ## Get sector data by sector id
 static func get_sector(sector_id: String) -> Dictionary:
-	var data: Dictionary = SECTOR_DATA.get(sector_id)
-	if data == null:
-		push_error("LevelData: unknown sector %s" % sector_id)
+	var raw = SECTOR_DATA.get(sector_id)
+	if raw == null:
 		return {}
-	return data.duplicate()
+	return (raw as Dictionary).duplicate()
 
 
 ## Get boss data by boss id
 static func get_boss(boss_id: String) -> Dictionary:
-	var data: Dictionary = BOSS_DATA.get(boss_id)
-	if data == null:
-		push_error("LevelData: unknown boss %s" % boss_id)
+	var raw = BOSS_DATA.get(boss_id)
+	if raw == null:
 		return {}
-	return data.duplicate()
+	return (raw as Dictionary).duplicate()
 
 
 ## Get level config

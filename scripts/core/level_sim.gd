@@ -30,6 +30,11 @@ func init(sim_ref: ProtoSim) -> void:
 
 
 func start_sector(sector_id: String) -> void:
+	# 注意：safe_zone 在流程里出现两次，不能用 find 反推下标，否则会倒退
+	if sector_id != "safe_zone":
+		var idx := sector_order.find(sector_id)
+		if idx >= 0:
+			sector_index = idx
 	current_sector = sector_id
 	current_boss = ""
 	sector_timer = 0.0
@@ -39,6 +44,10 @@ func start_sector(sector_id: String) -> void:
 
 
 func start_boss(boss_id: String) -> void:
+	var idx := sector_order.find(boss_id)
+	if idx >= 0:
+		sector_index = idx
+	current_sector = boss_id
 	current_boss = boss_id
 	var data: Dictionary = LevelData.get_boss(boss_id)
 	boss_max_hp = float(data.get("max_hp", 1000.0))
@@ -47,27 +56,11 @@ func start_boss(boss_id: String) -> void:
 
 
 func next_sector() -> void:
-	# If currently in boss fight, find next boss or victory
-	if current_boss != "":
-		var current_boss_index := sector_order.find(current_boss)
-		for i in range(current_boss_index + 1, sector_order.size()):
-			var next_id: String = sector_order[i]
-			if next_id.begins_with("boss_"):
-				start_boss(next_id)
-				return
-			if next_id == "victory":
-				is_victory = true
-				return
-		# No more bosses, victory
-		is_victory = true
-		return
-
-	# Currently in sector
+	# 统一按下标推进：sector_a → safe_zone → sector_b → safe_zone → boss_1 → safe_zone → boss_2 → victory
 	sector_index += 1
 	if sector_index >= sector_order.size():
 		is_victory = true
 		return
-
 	var next_id: String = sector_order[sector_index]
 	if next_id == "victory":
 		is_victory = true
@@ -79,10 +72,12 @@ func next_sector() -> void:
 
 
 func _update_sector(delta: float) -> void:
-	if current_sector == "":
+	if current_sector == "" or current_boss != "":
 		return
 	sector_timer += delta
 	var sector_data: Dictionary = LevelData.get_sector(current_sector)
+	if sector_data.is_empty():
+		return
 	var sector_dur: float = float(sector_data.get("duration_sec", 180.0))
 	if sector_timer >= sector_dur:
 		next_sector()

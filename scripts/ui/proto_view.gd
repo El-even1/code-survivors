@@ -37,6 +37,11 @@ var camera_pos := Vector2.ZERO
 var stat_label: Label
 var hp_bar: StatBar
 var mana_bar: StatBar
+var boss_bar: StatBar
+var safe_panel: ColorRect
+var safe_title: Label
+var safe_hint: Label
+var safe_btn: Button
 var result_label: Label
 var upgrade_panel: CanvasLayer
 var upgrade_buttons: Array = []
@@ -103,6 +108,43 @@ func _build_ui() -> void:
 	mana_bar.size = Vector2(300, 18)
 	mana_bar.fill_col = Color(0.35, 0.6, 1.0)
 	layer.add_child(mana_bar)
+
+	# Boss 血条（居中，仅 Boss 战显示）
+	boss_bar = StatBar.new()
+	boss_bar.position = Vector2(Tuning.VIEW_W * 0.5 - 320.0, 52.0)
+	boss_bar.size = Vector2(640, 24)
+	boss_bar.fill_col = Color(0.7, 0.22, 0.42)
+	boss_bar.visible = false
+	layer.add_child(boss_bar)
+
+	# 安全区面板：回血 + 整理背包 + 继续
+	safe_panel = ColorRect.new()
+	safe_panel.color = Color(0.03, 0.05, 0.08, 0.72)
+	safe_panel.size = Vector2(Tuning.VIEW_W, Tuning.VIEW_H)
+	safe_panel.visible = false
+	layer.add_child(safe_panel)
+
+	safe_title = Label.new()
+	safe_title.position = Vector2(Tuning.VIEW_W * 0.5 - 80.0, 250.0)
+	safe_title.add_theme_font_size_override("font_size", 44)
+	safe_title.add_theme_color_override("font_color", Color(0.6, 1.0, 0.7))
+	safe_title.visible = false
+	layer.add_child(safe_title)
+
+	safe_hint = Label.new()
+	safe_hint.position = Vector2(Tuning.VIEW_W * 0.5 - 260.0, 320.0)
+	safe_hint.add_theme_font_size_override("font_size", 20)
+	safe_hint.add_theme_color_override("font_color", Color(0.8, 0.9, 1.0))
+	safe_hint.visible = false
+	layer.add_child(safe_hint)
+
+	safe_btn = Button.new()
+	safe_btn.position = Vector2(Tuning.VIEW_W * 0.5 - 120.0, 380.0)
+	safe_btn.size = Vector2(240, 54)
+	safe_btn.add_theme_font_size_override("font_size", 22)
+	safe_btn.pressed.connect(_on_safe_continue)
+	safe_btn.visible = false
+	layer.add_child(safe_btn)
 
 	var hint := Label.new()
 	hint.text = I18n.ui("hud_move")
@@ -257,6 +299,11 @@ func _input(event: InputEvent) -> void:
 			if sim.alive and not upgrade_panel.visible:
 				toggle_backpack()
 				get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+			# 安全区：Enter 继续下一阶段
+			if sim.is_safe_zone() and sim.alive:
+				sim.continue_from_safe_zone()
+				get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_R and (not sim.alive or sim.level_sim.is_victory):
 			# 死亡 / 通关后按 R 回到选人界面
 			get_tree().change_scene_to_file("res://scenes/start.tscn")
@@ -346,8 +393,19 @@ func _update_stat() -> void:
 	var slot_tag := I18n.ui("hud_slot") % (sim.get_active_slot() + 1)
 	if is_paused:
 		slot_tag += " " + I18n.ui("hud_paused")
-	stat_label.text = "%s   %s %d   %s %d/%d   %s %d   %s %d   %s %s   %.1fs   %s" % [
+	var sector_tag := ""
+	if sim.is_boss_fight():
+		sector_tag = I18n.ui("hud_boss") % I18n.sector_name(sim.current_boss)
+	elif sim.is_safe_zone():
+		sector_tag = I18n.ui("hud_safe")
+	else:
+		sector_tag = I18n.ui("hud_sector") % [
+			I18n.sector_name(sim.current_sector),
+			sim.sector_time_left(),
+		]
+	stat_label.text = "%s   %s   %s %d   %s %d/%d   %s %d   %s %d   %s %s   %.1fs   %s" % [
 		slot_tag,
+		sector_tag,
 		I18n.ui("hud_lv"), sim.level,
 		I18n.ui("hud_xp"), int(sim.xp), int(sim.xp_to_next),
 		I18n.ui("hud_kills"), sim.kills,
@@ -372,6 +430,38 @@ func _update_stat() -> void:
 	mana_bar.ratio = mana_ratio
 	mana_bar.text = I18n.ui("bar_mana") % [int(sim.mana), int(sim.mana_max)]
 	mana_bar.queue_redraw()
+
+	# Boss 血条
+	var boss_on: bool = sim.is_boss_fight()
+	boss_bar.visible = boss_on
+	if boss_on:
+		var boss_ratio: float = 0.0
+		if sim.boss_max_hp > 0.0:
+			boss_ratio = clampf(sim.boss_hp / sim.boss_max_hp, 0.0, 1.0)
+		boss_bar.ratio = boss_ratio
+		boss_bar.fill_col = Color(0.7, 0.22, 0.42).lerp(Color(0.95, 0.35, 0.2), 1.0 - boss_ratio)
+		boss_bar.text = I18n.ui("boss_bar") % [
+			I18n.sector_name(sim.current_boss), sim.boss_phase,
+			int(maxf(0.0, sim.boss_hp)), int(sim.boss_max_hp),
+		]
+		boss_bar.queue_redraw()
+
+	# 安全区面板
+	var safe_on: bool = sim.is_safe_zone() and sim.alive
+	if safe_panel != null:
+		safe_panel.visible = safe_on
+		safe_title.visible = safe_on
+		safe_hint.visible = safe_on
+		safe_btn.visible = safe_on
+		if safe_on:
+			safe_title.text = I18n.ui("safe_title")
+			safe_hint.text = I18n.ui("safe_hint")
+			safe_btn.text = I18n.ui("safe_continue")
+
+
+func _on_safe_continue() -> void:
+	sim.continue_from_safe_zone()
+	_update_stat()
 
 
 ## Camera follow: keep player at viewport center, smooth lerp
@@ -458,6 +548,26 @@ func _draw() -> void:
 	# Red square horde (draw viewport only, skip off-screen)
 	_raster_enemies(vp.grow(pad))
 
+	# Boss：大色块 + 阶段换色
+	if sim.is_boss_fight():
+		var br: float = sim.boss_radius
+		var bp: Vector2 = sim.boss_pos
+		var bcol := Color(0.72, 0.2, 0.3)
+		if sim.boss_phase == 2:
+			bcol = Color(0.85, 0.25, 0.55)
+		elif sim.boss_phase >= 3:
+			bcol = Color(1.0, 0.3, 0.2)
+		draw_rect(Rect2(bp - Vector2(br, br), Vector2(br * 2.0, br * 2.0)), bcol, true)
+		draw_rect(Rect2(bp - Vector2(br, br), Vector2(br * 2.0, br * 2.0)),
+			Color(1, 1, 1, 0.9), false, 3.0)
+
+	# Boss 弹幕
+	for i in range(sim.boss_shots_pos.size()):
+		var sp: Vector2 = sim.boss_shots_pos[i]
+		if not vp.grow(pad).has_point(sp):
+			continue
+		draw_circle(sp, 7.0, Color(1, 0.55, 0.55, 0.95))
+
 	# Blue square player (invulnerable frame flash)
 	var half_p := Tuning.PLAYER_SIZE * 0.5
 	var pcol := Color(0.28, 0.55, 1.0)
@@ -521,14 +631,19 @@ func _draw_weapon_attack(flash: float) -> void:
 	var r: float = sim.attack_radius
 	var p: Vector2 = sim.player_pos
 
-	# Facing direction: toward nearest enemy, fallback +X
+	# Facing direction: toward nearest enemy (or boss), fallback +X
 	var face: Vector2 = Vector2(1, 0)
-	var best_d2: float = 999999.0
-	for ep in sim.enemy_pos:
-		var d2: float = ep.distance_squared_to(p)
-		if d2 < best_d2:
-			best_d2 = d2
-			face = (ep - p).normalized()
+	if sim.is_boss_fight():
+		var to_boss: Vector2 = sim.boss_pos - p
+		if to_boss.length_squared() > 0.01:
+			face = to_boss.normalized()
+	else:
+		var best_d2: float = 999999.0
+		for ep in sim.enemy_pos:
+			var d2: float = ep.distance_squared_to(p)
+			if d2 < best_d2:
+				best_d2 = d2
+				face = (ep - p).normalized()
 
 	if sim.char_id == "mage":
 		# Staff: white beam toward nearest enemy

@@ -16,12 +16,22 @@ var level_sim: LevelSim
 var current_sector: String = ""
 var current_boss: String = ""
 
-## Boss state
+## Boss state（运行时）
 var boss_id := ""
 var boss_hp := 0.0
 var boss_max_hp := 0.0
 var boss_phase := 1
 var boss_immunity: Array = []
+var boss_pos := Vector2.ZERO
+var boss_radius := 46.0
+var boss_speed := 58.0
+var boss_attack_timer := 0.0
+var boss_shots_pos: Array[Vector2] = []
+var boss_shots_dir: Array[Vector2] = []
+var boss_shots_life: Array[float] = []
+
+## 安全区状态
+var safe_zone_healed := false
 
 var char_base_hp := 140.0
 var char_base_speed := 265.0
@@ -177,6 +187,8 @@ func _select_char(cid: String) -> void:
 
 
 func start_boss(boss_id: String) -> void:
+	# 兼容旧接口：让 LevelSim 进入 Boss 战，下次 step 会同步出 Boss 实体
+	level_sim.start_boss(boss_id)
 	self.boss_id = boss_id
 	var data: Dictionary = LevelData.get_boss(boss_id)
 	boss_max_hp = float(data["max_hp"])
@@ -549,6 +561,7 @@ func step(delta: float, input_dir: Vector2) -> void:
 
 	# Level simulation
 	level_sim.step(delta)
+	_sync_level_state()
 	# If game ended, stop
 	if level_sim.is_victory:
 		return
@@ -557,12 +570,26 @@ func step(delta: float, input_dir: Vector2) -> void:
 		player_pos += input_dir.normalized() * player_speed * delta
 		_clamp_player()
 
-	spawn_timer -= delta
-	if spawn_timer <= 0.0:
-		spawn_timer = ProtoLogic.spawn_interval(elapsed)
-		_spawn_wave()
+	# 安全区：不刷怪、不攻击，只回蓝 + 捡东西，等玩家点「继续」
+	if is_safe_zone():
+		mana = minf(mana_max, mana + mana_regen * delta)
+		_update_boss_shots(delta)
+		_update_gems(delta)
+		_update_block_drops(delta)
+		_age_dmg_text(delta)
+		if attack_flash > 0.0:
+			attack_flash -= delta
+		return
 
-	_move_enemies(delta)
+	if is_boss_fight():
+		_update_boss(delta)
+		_update_boss_shots(delta)
+	else:
+		spawn_timer -= delta
+		if spawn_timer <= 0.0:
+			spawn_timer = ProtoLogic.spawn_interval(elapsed)
+			_spawn_wave()
+		_move_enemies(delta)
 
 	# 蓝量持续回复
 	mana = minf(mana_max, mana + mana_regen * delta)
@@ -668,7 +695,9 @@ func _clamp_player() -> void:
 ## 攻击范围内是否有目标（Boss 战中 Boss 就是目标）
 func _has_target_in_range() -> bool:
 	if current_boss != "":
-		return true
+		# Boss 体积大：按 Boss 边缘到玩家距离判断，站近了才打得到
+		var reach := attack_radius + boss_radius
+		return boss_pos.distance_squared_to(player_pos) <= reach * reach
 	var r2 := attack_radius * attack_radius
 	for p in enemy_pos:
 		if p.distance_squared_to(player_pos) <= r2:
@@ -676,15 +705,176 @@ func _has_target_in_range() -> bool:
 	return false
 
 
+## ---------- 关卡状态：安全区 / Boss 战 ----------
+func is_safe_zone() -> bool:
+	return level_sim != null and level_sim.current_sector == "safe_zone"
+
+
+func is_boss_fight() -> bool:
+	return current_boss != ""
+
+
+## 安全区点「继续」进入下一阶段
+func continue_from_safe_zone() -> void:
+	if not is_safe_zone():
+		return
+	level_sim.next_sector()
+
+
+## 关卡显示用：当前区域名 / 剩余时间
+func sector_name() -> String:
+	if is_boss_fight():
+		var bd: Dictionary = LevelData.get_boss(current_boss)
+		return String(bd.get("name", current_boss))
+	var sd: Dictionary = LevelData.get_sector(level_sim.current_sector)
+	return String(sd.get("name", level_sim.current_sector))
+
+
+func sector_time_left() -> float:
+	if is_safe_zone() or is_boss_fight():
+		return 0.0
+	var sd: Dictionary = LevelData.get_sector(level_sim.current_sector)
+	var dur := float(sd.get("duration_sec", 0.0))
+	return maxf(0.0, dur - level_sim.sector_timer)
+
+
+## 同步关卡状态机 → 战斗内状态（进入 Boss / 退出 Boss / 进入安全区）
+func _sync_level_state() -> void:
+	current_sector = level_sim.current_sector
+	var lb := String(level_sim.current_boss)
+	if lb != current_boss:
+		if lb != "":
+			_enter_boss(lb)
+		else:
+			_exit_boss()
+	if is_safe_zone():
+		if not safe_zone_healed:
+			_enter_safe_zone()
+	else:
+		safe_zone_healed = false
+
+
+func _enter_boss(bid: String) -> void:
+	current_boss = bid
+	boss_id = bid
+	boss_hp = level_sim.boss_hp
+	boss_max_hp = level_sim.boss_max_hp
+	boss_phase = 1
+	boss_pos = player_pos + Vector2(0.0, -260.0)
+	boss_attack_timer = 1.5
+	# 清场：Boss 战不再刷小怪
+	enemy_pos.clear()
+	enemy_hp.clear()
+	enemy_id.clear()
+	boss_shots_pos.clear()
+	boss_shots_dir.clear()
+	boss_shots_life.clear()
+
+
+func _exit_boss() -> void:
+	current_boss = ""
+	boss_id = ""
+	boss_hp = 0.0
+	boss_max_hp = 0.0
+	boss_shots_pos.clear()
+	boss_shots_dir.clear()
+	boss_shots_life.clear()
+
+
+func _enter_safe_zone() -> void:
+	safe_zone_healed = true
+	# 清场 + 恢复 30% 最大生命
+	enemy_pos.clear()
+	enemy_hp.clear()
+	enemy_id.clear()
+	boss_shots_pos.clear()
+	boss_shots_dir.clear()
+	boss_shots_life.clear()
+	player_hp = minf(player_max_hp, player_hp + player_max_hp * 0.3)
+
+
+## Boss 行为：追击 + 接触伤害 + 阶段加速 + 环形弹幕
+func _update_boss(delta: float) -> void:
+	if current_boss == "":
+		return
+	boss_hp = level_sim.boss_hp
+	boss_max_hp = level_sim.boss_max_hp
+	if boss_hp <= 0.0:
+		return
+
+	# 阶段：66% / 33%
+	var ratio: float = 0.0
+	if boss_max_hp > 0.0:
+		ratio = clampf(boss_hp / boss_max_hp, 0.0, 1.0)
+	var phase := 1
+	if ratio <= 0.33:
+		phase = 3
+	elif ratio <= 0.66:
+		phase = 2
+	if phase != boss_phase:
+		boss_phase = phase
+		level_sim.set_boss_phase(phase)
+
+	# 追击
+	var to_player := player_pos - boss_pos
+	var d2 := to_player.length_squared()
+	var spd := boss_speed * (1.0 + 0.25 * float(boss_phase - 1))
+	if d2 > 4.0:
+		boss_pos += to_player / sqrt(d2) * spd * delta
+
+	# 接触伤害
+	if iframe_timer <= 0.0:
+		var touch_r := boss_radius + Tuning.PLAYER_SIZE * 0.5
+		if boss_pos.distance_squared_to(player_pos) <= touch_r * touch_r:
+			player_hp -= 12.0
+			iframe_timer = Tuning.CONTACT_IFRAMES
+			last_hit_time = elapsed
+
+	# 弹幕
+	boss_attack_timer -= delta
+	if boss_attack_timer <= 0.0:
+		boss_attack_timer = maxf(0.8, 2.2 - 0.4 * float(boss_phase - 1))
+		_spawn_boss_shots(8 + 4 * (boss_phase - 1))
+
+
+func _spawn_boss_shots(count: int) -> void:
+	if boss_shots_pos.size() >= 160:
+		return
+	for i in range(count):
+		var a: float = TAU * float(i) / float(count)
+		boss_shots_pos.append(boss_pos)
+		boss_shots_dir.append(Vector2(cos(a), sin(a)))
+		boss_shots_life.append(3.5)
+
+
+func _update_boss_shots(delta: float) -> void:
+	var i := boss_shots_pos.size() - 1
+	var hit_r := 14.0
+	while i >= 0:
+		boss_shots_pos[i] = boss_shots_pos[i] + boss_shots_dir[i] * 240.0 * delta
+		boss_shots_life[i] -= delta
+		var remove := boss_shots_life[i] <= 0.0
+		if not remove and iframe_timer <= 0.0:
+			if boss_shots_pos[i].distance_squared_to(player_pos) <= hit_r * hit_r:
+				player_hp -= 8.0
+				iframe_timer = Tuning.CONTACT_IFRAMES
+				last_hit_time = elapsed
+				remove = true
+		if remove:
+			ProtoLogic.swap_pop(boss_shots_pos, i)
+			ProtoLogic.swap_pop(boss_shots_dir, i)
+			ProtoLogic.swap_pop(boss_shots_life, i)
+		i -= 1
+
+
 func _fire_attack() -> void:
-	# If boss fight, attack boss instead of enemies
+	# Boss 战：直接打 Boss（血量由 LevelSim 统一管理，打空即推进关卡）
 	if current_boss != "":
 		aoe_pulses += 1
-		boss_hp -= attack_damage
+		level_sim.set_boss_hp(level_sim.boss_hp - attack_damage)
+		boss_hp = level_sim.boss_hp
 		damage_dealt += attack_damage
-		_push_dmg_text(player_pos, attack_damage)
-		if boss_hp <= 0:
-			_boss_defeated()
+		_push_dmg_text(boss_pos, attack_damage)
 		return
 
 	if enemy_pos.size() == 0:
@@ -736,11 +926,6 @@ func _kill_enemy(idx: int) -> void:
 	ProtoLogic.swap_pop(enemy_pos, idx)
 	ProtoLogic.swap_pop(enemy_hp, idx)
 	ProtoLogic.swap_pop(enemy_id, idx)
-
-
-func _boss_defeated() -> void:
-	boss_hp = 0
-	level_sim.next_sector()
 
 
 func _update_gems(delta: float) -> void:

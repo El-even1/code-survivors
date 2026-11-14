@@ -79,13 +79,17 @@ func test_level_flow() -> void:
 	check(ls.current_sector == "sector_a", "Sector A started")
 	ls.next_sector()
 	check(ls.current_sector == "safe_zone", "Safe zone after sector A")
-	ls.start_boss("boss_1")
+	ls.next_sector()
+	check(ls.current_sector == "sector_b", "Sector B after safe zone")
+	ls.next_sector()
+	check(ls.current_sector == "safe_zone", "Safe zone after sector B")
+	ls.next_sector()
 	check(ls.current_boss == "boss_1", "Boss 1 started")
-	ls.boss_hp = 0
+	ls.set_boss_hp(0.0)
+	check(ls.current_sector == "safe_zone", "Safe zone after Boss 1")
 	ls.next_sector()
-	check(ls.current_boss == "boss_2", "Boss 2 after Boss 1")
-	ls.boss_hp = 0
-	ls.next_sector()
+	check(ls.current_boss == "boss_2", "Boss 2 after safe zone")
+	ls.set_boss_hp(0.0)
 	check(ls.is_victory, "Victory after all bosses")
 
 
@@ -96,9 +100,13 @@ func test_boss_mechanics() -> void:
 	var sim := ProtoSim.new()
 	sim._select_char("mage")
 	sim.start_boss("boss_1")
-	check(sim.boss_id == "boss_1", "Boss 1 started")
+	sim.step(0.016, Vector2.ZERO)
+	check(sim.current_boss == "boss_1", "Boss 1 started")
 	check(sim.boss_hp > 0, "Boss has HP")
-	sim.boss_hp -= 1000
+	check(sim.enemy_pos.size() == 0, "No minions during boss fight")
+	sim.level_sim.set_boss_hp(sim.level_sim.boss_hp - 1000.0)
+	sim.step(0.016, Vector2.ZERO)
 	check(sim.boss_hp < sim.boss_max_hp, "Boss takes damage")
-	sim.boss_phase = 2
+	sim.level_sim.set_boss_hp(sim.boss_max_hp * 0.5)
+	sim.step(0.016, Vector2.ZERO)
 	check(sim.boss_phase == 2, "Boss phase 2 active")

@@ -3,7 +3,9 @@ extends SceneTree
 ## 阶段二截图：跑 main.tscn 若干帧后抓 viewport 存 PNG。
 ## 用法：
 ##   godot --path . --script tests/screenshot.gd -- --char=warrior --lang=zh
-##   godot --path . --script tests/screenshot.gd -- --char=warrior --lang=zh --editor
+##   godot --path . --script tests/screenshot.gd -- --char=warrior --lang=zh --backpack
+##   godot --path . --script tests/screenshot.gd -- --char=warrior --lang=zh --boss
+##   godot --path . --script tests/screenshot.gd -- --char=warrior --lang=zh --safe
 
 const OUT_DIR := "res://screenshots"
 
@@ -15,14 +17,18 @@ func _init() -> void:
 func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
 
-	var want_backpack := false
+	var mode := "battle"   # battle / backpack / boss / safe
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--char="):
 			GameStateData.selected_char = arg.substr(7)
 		elif arg.begins_with("--lang="):
 			GameStateData.language = arg.substr(7)
 		elif arg == "--backpack":
-			want_backpack = true
+			mode = "backpack"
+		elif arg == "--boss":
+			mode = "boss"
+		elif arg == "--safe":
+			mode = "safe"
 
 	var scene: PackedScene = load("res://scenes/main.tscn")
 	if scene == null:
@@ -48,8 +54,7 @@ func _run() -> void:
 
 	var suffix := "%s_%s" % [GameStateData.selected_char, GameStateData.language]
 
-	if want_backpack:
-		# 打开背包验证工坊 UI；发两个掉落块并装一个，展示蓝量占用与修饰槽
+	if mode == "backpack":
 		inst.sim.grant_block("mod_range")
 		inst.sim.grant_block("mod_penetrate")
 		inst.toggle_backpack()
@@ -58,6 +63,19 @@ func _run() -> void:
 		for i in range(10):
 			await process_frame
 		suffix += "_backpack"
+	elif mode == "boss":
+		# 直接进 Boss 战：验证 Boss 实体、血条、阶段弹幕
+		inst.sim.level_sim.start_boss("boss_1")
+		for i in range(90):
+			await process_frame
+		suffix += "_boss"
+	elif mode == "safe":
+		# 直接进安全区：验证回血面板 + 继续按钮
+		inst.sim.level_sim.start_sector("safe_zone")
+		inst.sim.safe_zone_healed = false
+		for i in range(20):
+			await process_frame
+		suffix += "_safe"
 	else:
 		# 等到攻击瞬间再抓图，确保武器特效出现在画面里
 		var got_flash := false

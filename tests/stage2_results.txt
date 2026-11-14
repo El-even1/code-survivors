@@ -6,12 +6,16 @@
   ok   Boss has multiple phases
   ok   Sector A started
   ok   Safe zone after sector A
+  ok   Sector B after safe zone
+  ok   Safe zone after sector B
   ok   Boss 1 started
-  ok   Boss 2 after Boss 1
+  ok   Safe zone after Boss 1
+  ok   Boss 2 after safe zone
   ok   Victory after all bosses
   ok   Boss 1 started
   ok   Boss has HP
+  ok   No minions during boss fight
   ok   Boss takes damage
   ok   Boss phase 2 active
 
-ALL 15 CHECKS PASSED
+ALL 19 CHECKS PASSED
