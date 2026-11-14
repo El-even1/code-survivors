@@ -35,6 +35,11 @@ var player_speed := Tuning.PLAYER_SPEED
 var alive := true
 var iframe_timer := 0.0
 
+## ---------- 蓝量（每次施法消耗，持续回复）----------
+var mana := 100.0
+var mana_max := 100.0
+var mana_regen := 8.0
+
 ## ---------- Attack System ----------
 var attack_cooldown := 0.60
 var attack_timer := 0.0
@@ -128,6 +133,11 @@ func _select_char(cid: String) -> void:
 	base_attack_cooldown = char_base_cooldown
 	attack_cooldown = char_base_cooldown
 	attack_timer = 0.0
+
+	# 蓝量池与回复（按角色）
+	mana_max = float(cfg.get("mana", 100.0))
+	mana = mana_max
+	mana_regen = float(cfg.get("mana_regen", 8.0))
 
 	if cid == "mage":
 		base_attack_damage = 25.0
@@ -347,12 +357,8 @@ func _modifier_indices(slot_idx: int) -> Array:
 ## ---------- 建造约束：蓝量 / 链路方向 / 存放区 ----------
 ## 一条管线槽已用蓝量
 func slot_mana_used(slot_idx: int) -> int:
-	if slot_idx < 0 or slot_idx >= slots.size():
-		return 0
-	var total := 0
-	for b in slots[slot_idx]:
-		total += BlockLibrary.mana_cost(String(b.id))
-	return total
+	# 兼容旧接口：现在返回「每次施法耗蓝」
+	return cast_mana_cost(slot_idx)
 
 
 ## 存放区（未装备的指令块）已用格子
@@ -395,23 +401,18 @@ func can_equip_socket(slot_idx: int, socket: int, block_id: String) -> String:
 	else:
 		return "socket_full"
 
-	# 蓝量：替换时只算增量
-	var cost := BlockLibrary.mana_cost(block_id)
-	var delta := cost
-	if socket == 0:
-		var old_action := slot_action_id(slot_idx)
-		if old_action != "":
-			delta = cost - BlockLibrary.mana_cost(old_action)
-	else:
-		var mods2 := _modifier_indices(slot_idx)
-		var mi2 := socket - 1
-		if mi2 < mods2.size():
-			var old_mod: CommandBlock = slots[slot_idx][mods2[mi2]]
-			delta = cost - BlockLibrary.mana_cost(String(old_mod.id))
-	if slot_mana_used(slot_idx) + delta > BlockLibrary.MANA_MAX:
-		return "mana_low"
-
+	# 蓝量不再是建造预算：每块只影响「每次施法耗蓝」，由 cast_mana_cost() 汇总
 	return ""
+
+
+## 该管线槽每次施法的耗蓝（主动块 + 所有修饰块叠加）
+func cast_mana_cost(slot_idx: int) -> int:
+	if slot_idx < 0 or slot_idx >= slots.size():
+		return 0
+	var total := 0
+	for b in slots[slot_idx]:
+		total += BlockLibrary.cast_cost(String(b.id))
+	return total
 
 
 ## 把掉落块放进指定插槽：类型匹配 + 链路顺序 + 蓝量上限，任一不满足都会被拒
@@ -563,11 +564,15 @@ func step(delta: float, input_dir: Vector2) -> void:
 
 	_move_enemies(delta)
 
+	# 蓝量持续回复
+	mana = minf(mana_max, mana + mana_regen * delta)
+
 	attack_timer -= delta
 	if attack_timer <= 0.0:
-		# 攻击范围内没有目标就保持待发（不消耗冷却、不播攻击特效），
-		# 目标一进圈立刻开火
-		if _has_target_in_range():
+		# 攻击范围内有目标、且蓝够施法才开火；否则保持待发（进圈/回蓝后立刻打）
+		var cast_cost := cast_mana_cost(active_slot)
+		if _has_target_in_range() and mana >= float(cast_cost):
+			mana -= float(cast_cost)
 			attack_timer = attack_cooldown
 			attack_flash = 0.15
 			_fire_attack()

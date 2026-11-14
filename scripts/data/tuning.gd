@@ -6,12 +6,12 @@ extends RefCounted
 ## Principle: All adjustable params here. Designers edit values, not code.
 
 ## ---------- Character Base Attributes ----------
-## Each character's base HP, speed, attack cooldown, weapon, passive
+## Each character's base HP, speed, attack cooldown, weapon, passive, mana pool/regen
 const CHARACTER_BASE := {
-	"mage":    {"name": "Mage",    "hp": 100.0, "speed": 240.0, "attack_cooldown": 0.60, "weapon": "Staff",   "passive": "Mana Regen: +10% attack speed"},
-	"warrior": {"name": "Warrior", "hp": 160.0, "speed": 200.0, "attack_cooldown": 0.90, "weapon": "Blade",   "passive": "Melee Resist: -30% contact damage"},
-	"hunter":  {"name": "Hunter",  "hp": 120.0, "speed": 250.0, "attack_cooldown": 0.70, "weapon": "Bow",     "passive": "Move +15%"},
-	"priest":  {"name": "Priest",  "hp": 130.0, "speed": 210.0, "attack_cooldown": 0.80, "weapon": "Tome",    "passive": "Lifesteal: +2% max HP on kill"},
+	"mage":    {"name": "Mage",    "hp": 100.0, "speed": 240.0, "attack_cooldown": 0.60, "weapon": "Staff",   "passive": "Mana Regen: +10% attack speed", "mana": 120.0, "mana_regen": 10.0},
+	"warrior": {"name": "Warrior", "hp": 160.0, "speed": 200.0, "attack_cooldown": 0.90, "weapon": "Blade",   "passive": "Melee Resist: -30% contact damage", "mana": 80.0, "mana_regen": 6.0},
+	"hunter":  {"name": "Hunter",  "hp": 120.0, "speed": 250.0, "attack_cooldown": 0.70, "weapon": "Bow",     "passive": "Move +15%", "mana": 100.0, "mana_regen": 8.0},
+	"priest":  {"name": "Priest",  "hp": 130.0, "speed": 210.0, "attack_cooldown": 0.80, "weapon": "Tome",    "passive": "Lifesteal: +2% max HP on kill", "mana": 110.0, "mana_regen": 9.0},
 }
 
 ## ---------- Player (current character) ----------

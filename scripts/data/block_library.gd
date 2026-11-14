@@ -18,27 +18,26 @@ const CHAR_SPECIFIC := {
 ## 每次击杀掉落指令块的概率
 const DROP_CHANCE := 0.08
 
-## 建造约束：每条管线槽的蓝量上限 / 背包存放区格子上限
-const MANA_MAX := 60
+## 建造约束：背包存放区格子上限
 const STORAGE_CAP := 6
 
-## 每块占用的蓝量（主动块贵，修饰块便宜）
-const MANA_COST := {
-	"action_projectile": 25,
-	"action_melee": 25,
-	"action_field": 30,
-	"action_aoe": 30,
-	"mod_penetrate": 15,
-	"mod_multi": 20,
-	"mod_track": 15,
-	"mod_range": 20,
-	"mod_cooldown": 15,
-	"mod_dot": 20,
+## 每次施法耗蓝：主动块 + 各个修饰块叠加（块越多每次施法越贵）
+const CAST_COST := {
+	"action_projectile": 6,
+	"action_melee": 6,
+	"action_field": 8,
+	"action_aoe": 8,
+	"mod_penetrate": 2,
+	"mod_multi": 4,
+	"mod_track": 3,
+	"mod_range": 3,
+	"mod_cooldown": 2,
+	"mod_dot": 3,
 }
 
 
-static func mana_cost(block_id: String) -> int:
-	return int(MANA_COST.get(block_id, 15))
+static func cast_cost(block_id: String) -> int:
+	return int(CAST_COST.get(block_id, 3))
 
 ## 本角色可用的全部指令块（通用 + 专属）
 static func for_char(cid: String) -> Array[String]:

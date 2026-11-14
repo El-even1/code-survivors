@@ -36,6 +36,7 @@ func _init() -> void:
 	test_attack_only_when_in_range()
 	test_warrior_cleave_hits_area()
 	test_block_library_and_sockets()
+	test_casting_consumes_mana()
 	test_modifier_changes_attack()
 	test_pipeline_empty()
 	test_pipeline_modifier_chain()
@@ -375,12 +376,12 @@ func test_block_library_and_sockets() -> void:
 	check(sim2.equip_socket(0, 1, "mod_penetrate"), "装入第一格成功")
 	sim2.grant_block("mod_cooldown")
 	check(sim2.equip_socket(0, 2, "mod_cooldown"), "装入第二格成功")
-	check(sim2.slot_mana_used(0) == 25 + 15 + 15, "蓝量按块累计")
+	check(sim2.cast_mana_cost(0) == 6 + 2 + 2, "每次施法耗蓝 = 主动 + 修饰叠加")
 
-	# 蓝量上限：超过就不能再装（战士可用 mod_range，20 蓝）
+	# 不再有建造蓝量上限：第三格也能装，只是每次施法更贵
 	sim2.grant_block("mod_range")
-	check(sim2.can_equip_socket(0, 3, "mod_range") == "mana_low", "蓝量不足时拒绝装备")
-	check(sim2.equip_socket(0, 3, "mod_range") == false, "蓝量不足装不进去")
+	check(sim2.equip_socket(0, 3, "mod_range"), "第三格也能装（无建造蓝量上限）")
+	check(sim2.cast_mana_cost(0) == 6 + 2 + 2 + 3, "块越多每次施法越贵")
 
 	# 存放区上限：最多 6 格
 	var sim3 := ProtoSim.new()
@@ -392,6 +393,39 @@ func test_block_library_and_sockets() -> void:
 	check(added == BlockLibrary.STORAGE_CAP, "存放区最多 6 格")
 	check(sim3.storage_used() == BlockLibrary.STORAGE_CAP, "存放区计数到上限")
 	check(sim3.storage_free() == 0, "存放区没有空位")
+
+
+## 蓝量是施法资源：施法扣蓝、蓝不够不施法、随时间回复
+func test_casting_consumes_mana() -> void:
+	var sim := ProtoSim.new()
+	sim._select_char("mage")
+	sim.enemy_pos.append(sim.player_pos + Vector2(20.0, 0.0))
+	sim.enemy_hp.append(500.0)
+	sim.enemy_id.append(0)
+	sim.attack_timer = 0.0
+
+	var mana0: float = sim.mana
+	var cost: int = sim.cast_mana_cost(0)
+	check(cost > 0, "管线有施法耗蓝")
+	sim.step(0.016, Vector2.ZERO)
+	check(sim.mana < mana0, "施法消耗蓝量")
+	var expect: float = mana0 + sim.mana_regen * 0.016 - float(cost)
+	check(absf(sim.mana - expect) < 0.5, "扣蓝量等于管线耗蓝（含当帧回复）")
+
+	# 蓝不够：不施法
+	sim.mana = 0.0
+	sim.attack_timer = 0.0
+	var hp_before: float = sim.enemy_hp[0]
+	sim.step(0.016, Vector2.ZERO)
+	check(sim.enemy_hp[0] >= hp_before, "蓝量不足时不施法")
+
+	# 无目标时也能回蓝
+	sim.enemy_pos.clear()
+	sim.enemy_hp.clear()
+	sim.enemy_id.clear()
+	sim.mana = 0.0
+	sim.step(1.0, Vector2.ZERO)
+	check(sim.mana > 0.0, "蓝量随时间自动回复")
 
 
 func test_modifier_changes_attack() -> void:

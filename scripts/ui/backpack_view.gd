@@ -64,7 +64,7 @@ class Socket extends Panel:
 		if bid == "":
 			label.text = caption
 		else:
-			label.text = I18n.ui("socket_block") % [I18n.block_name(bid), BlockLibrary.mana_cost(bid)]
+			label.text = I18n.ui("socket_block") % [I18n.block_name(bid), BlockLibrary.cast_cost(bid)]
 
 
 ## 存放区面板：接住从格子拖回来的块
@@ -351,10 +351,9 @@ func refresh() -> void:
 		sim.attack_pierce,
 	]
 	mana_label.text = I18n.ui("backpack_mana") % [
-		sim.slot_mana_used(editing_slot),
-		BlockLibrary.MANA_MAX,
-		sim.storage_used(),
-		BlockLibrary.STORAGE_CAP,
+		sim.cast_mana_cost(editing_slot),
+		int(sim.mana), int(sim.mana_max), sim.mana_regen,
+		sim.storage_used(), BlockLibrary.STORAGE_CAP,
 	]
 
 	var action_id: String = sim.slot_action_id(editing_slot)
@@ -404,7 +403,7 @@ func _refresh_inventory() -> void:
 		var lbl := Label.new()
 		lbl.text = "%s ×%d\n%s" % [
 			I18n.block_name(bid), count,
-			I18n.ui("chip_mana") % BlockLibrary.mana_cost(bid),
+			I18n.ui("chip_mana") % BlockLibrary.cast_cost(bid),
 		]
 		lbl.position = Vector2(8, 4)
 		lbl.add_theme_font_size_override("font_size", 13)

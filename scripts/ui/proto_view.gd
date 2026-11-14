@@ -4,6 +4,26 @@ extends Node2D
 ## Only "see": reads ProtoSim snapshot, draws with placeholder color blocks
 ## All drawing uses draw_* single batch, avoids per-frame node creation (doc: object pool + draw call)
 
+
+## 血条 / 蓝条：纯色块条 + 内嵌数值文本
+class StatBar extends Control:
+	var ratio := 1.0
+	var fill_col := Color(0.85, 0.3, 0.3)
+	var bg_col := Color(0.11, 0.13, 0.18)
+	var text := ""
+
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		draw_rect(r, bg_col, true)
+		var w: float = size.x * clampf(ratio, 0.0, 1.0)
+		if w > 0.0:
+			draw_rect(Rect2(Vector2.ZERO, Vector2(w, size.y)), fill_col, true)
+		draw_rect(r, Color(1, 1, 1, 0.25), false, 1.0)
+		var font := ThemeDB.fallback_font
+		draw_string(font, Vector2(6, size.y - 5), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+			Color(1, 1, 1, 0.92))
+
+
 var sim
 
 ## AoE visual pulse
@@ -15,6 +35,8 @@ var camera_pos := Vector2.ZERO
 @onready var cam2d: Camera2D = get_node("Camera2D")
 
 var stat_label: Label
+var hp_bar: StatBar
+var mana_bar: StatBar
 var result_label: Label
 var upgrade_panel: CanvasLayer
 var upgrade_buttons: Array = []
@@ -69,16 +91,29 @@ func _build_ui() -> void:
 	stat_label.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
 	layer.add_child(stat_label)
 
+	# 血条 / 蓝条（纯色块条）
+	hp_bar = StatBar.new()
+	hp_bar.position = Vector2(18, 46)
+	hp_bar.size = Vector2(300, 22)
+	hp_bar.fill_col = Color(0.85, 0.28, 0.28)
+	layer.add_child(hp_bar)
+
+	mana_bar = StatBar.new()
+	mana_bar.position = Vector2(18, 72)
+	mana_bar.size = Vector2(300, 18)
+	mana_bar.fill_col = Color(0.35, 0.6, 1.0)
+	layer.add_child(mana_bar)
+
 	var hint := Label.new()
 	hint.text = I18n.ui("hud_move")
-	hint.position = Vector2(18, 46)
+	hint.position = Vector2(18, 98)
 	hint.add_theme_font_size_override("font_size", 15)
 	hint.add_theme_color_override("font_color", Color(0.45, 0.5, 0.6))
 	layer.add_child(hint)
 
 	# 拾取指令块提示
 	toast_label = Label.new()
-	toast_label.position = Vector2(18, 70)
+	toast_label.position = Vector2(18, 120)
 	toast_label.add_theme_font_size_override("font_size", 17)
 	toast_label.add_theme_color_override("font_color", Color(0.85, 0.7, 1.0))
 	toast_label.visible = false
@@ -311,18 +346,32 @@ func _update_stat() -> void:
 	var slot_tag := I18n.ui("hud_slot") % (sim.get_active_slot() + 1)
 	if is_paused:
 		slot_tag += " " + I18n.ui("hud_paused")
-	stat_label.text = "%s  %s %d/%d   %s %d   %s %d/%d   %s %d   %s %d   %s %s   %.1fs   %s   %s" % [
+	stat_label.text = "%s   %s %d   %s %d/%d   %s %d   %s %d   %s %s   %.1fs   %s" % [
 		slot_tag,
-		I18n.ui("hud_hp"), int(sim.player_hp), int(sim.player_max_hp),
 		I18n.ui("hud_lv"), sim.level,
 		I18n.ui("hud_xp"), int(sim.xp), int(sim.xp_to_next),
 		I18n.ui("hud_kills"), sim.kills,
 		I18n.ui("hud_onscreen"), sim.enemy_pos.size(),
 		I18n.ui("hud_phase"), I18n.phase_name(sim.elapsed),
 		sim.elapsed,
-		I18n.ui("hud_mana") % [sim.slot_mana_used(sim.get_active_slot()), BlockLibrary.MANA_MAX],
 		I18n.ui("hud_storage") % [sim.storage_used(), BlockLibrary.STORAGE_CAP],
 	]
+
+	# 血条 / 蓝条数值与比例
+	var hp_ratio: float = 0.0
+	if sim.player_max_hp > 0.0:
+		hp_ratio = clampf(sim.player_hp / sim.player_max_hp, 0.0, 1.0)
+	hp_bar.ratio = hp_ratio
+	hp_bar.fill_col = Color(0.85, 0.28, 0.28).lerp(Color(0.35, 0.85, 0.4), hp_ratio)
+	hp_bar.text = I18n.ui("bar_hp") % [int(sim.player_hp), int(sim.player_max_hp)]
+	hp_bar.queue_redraw()
+
+	var mana_ratio: float = 0.0
+	if sim.mana_max > 0.0:
+		mana_ratio = clampf(sim.mana / sim.mana_max, 0.0, 1.0)
+	mana_bar.ratio = mana_ratio
+	mana_bar.text = I18n.ui("bar_mana") % [int(sim.mana), int(sim.mana_max)]
+	mana_bar.queue_redraw()
 
 
 ## Camera follow: keep player at viewport center, smooth lerp
